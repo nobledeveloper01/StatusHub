@@ -1,0 +1,34 @@
+version: "2"
+
+linters:
+  default: standard
+  enable:
+    - bodyclose      # leaked HTTP response bodies — the dispatcher lives on this
+    - errorlint      # error comparisons that break under wrapping
+    - gocritic
+    - gosec          # SAST gate (§8.5)
+    - misspell
+    - nilerr         # returning nil after a non-nil error
+    - noctx          # HTTP requests without a context
+    - revive
+    - unconvert
+
+  settings:
+    revive:
+      rules:
+        - name: exported
+          disabled: true   # doc comments are reviewed, not linted
+    gocritic:
+      disabled-checks:
+        - ifElseChain
+
+  exclusions:
+    rules:
+      # Tests use fixed credentials and unchecked helpers by design.
+      - path: tests/
+        linters:
+          - gosec
+
+formatters:
+  enable:
+    - gofmt

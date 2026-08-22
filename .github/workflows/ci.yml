@@ -1,0 +1,102 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # New stdlib CVEs land without us pushing anything, so scan weekly too.
+    - cron: '17 6 * * 1'
+
+# go.mod declares the language floor. CI builds with the latest stable
+# toolchain instead: govulncheck reports stdlib advisories against the
+# toolchain that built the binary, and pinning an old minor pins its
+# unpatched standard library along with it.
+env:
+  GO_VERSION: 'stable'
+  GOLANGCI_LINT_VERSION: 'v2.12.2'
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: statushub_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports: ['5432:5432']
+
+    env:
+      STATUSHUB_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/statushub_test?sslmode=disable
+
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Formatting
+        run: test -z "$(gofmt -l .)" || (gofmt -l . && exit 1)
+
+      - name: Vet
+        run: go vet ./...
+
+      - uses: golangci/golangci-lint-action@v8
+        with:
+          version: ${{ env.GOLANGCI_LINT_VERSION }}
+
+      - name: Tests
+        run: go test -race -coverpkg=./internal/...,./pkg/... ./tests/...
+
+      # Blocking gate (§8.1): tenant B must never reach tenant A's data,
+      # and must get 404 rather than 403 — a 403 confirms the row exists.
+      - name: Tenant isolation
+        run: go test -race ./tests/... -run 'Store/TenantIsolation' -v
+
+      # Blocking gate (§11.9): every adapter against real captured payloads
+      # and against known-good/known-bad signature vectors.
+      - name: Adapter corpus and signature vectors
+        run: go test -race ./tests/... -run 'Adapter' -v
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
+
+      - name: gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build:
+    needs: [quality, security]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      # Dev machines are arm64 and this is amd64: a build that only ever
+      # runs locally is a build that only ever works locally.
+      - name: Cross build
+        run: |
+          GOOS=linux GOARCH=amd64 go build ./...
+          GOOS=linux GOARCH=arm64 go build ./...
+      - name: Container image
+        run: docker build -t statushub:ci .

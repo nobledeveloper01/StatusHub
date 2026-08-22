@@ -1,0 +1,28 @@
+# Binaries
+/statushub
+/statushubctl
+/bin/
+*.exe
+
+# Test and coverage output
+*.out
+*.test
+coverage.*
+
+# Local environment
+.env
+.env.*
+!.env.example
+
+# Editors and OS
+.DS_Store
+.idea/
+.vscode/
+
+# Dashboard build inputs (the built dist is committed so a Go build needs no node)
+web/node_modules/
+sdk/node/node_modules/
+sdk/node/dist/
+sdk/python/.venv/
+sdk/python/dist/
+__pycache__/
