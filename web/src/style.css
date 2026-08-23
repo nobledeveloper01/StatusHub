@@ -1,8 +1,9 @@
 /*
-  Deliberately plain. This is read during incidents, on a laptop screen, by
-  somebody who is already stressed — so: high contrast, no animation, numbers
-  in a monospace face so columns line up, and nothing that moves while you are
-  trying to read it.
+  Deliberately plain.
+ 
+  This is read during incidents, on a laptop, by somebody who is already
+  stressed: high contrast, no animation, numbers in a monospace face so
+  columns line up, and nothing that moves while you are trying to read it.
 */
 :root {
   --bg: #ffffff;
@@ -36,23 +37,25 @@ body {
 }
 
 header {
-  display: flex; align-items: center; gap: 1.5rem;
-  padding: 0.75rem 1.25rem;
-  border-bottom: 1px solid var(--line);
-  flex-wrap: wrap;
+  display: flex; align-items: center; gap: 1.5rem; flex-wrap: wrap;
+  padding: 0.75rem 1.25rem; border-bottom: 1px solid var(--line);
 }
 header h1 { font-size: 1rem; margin: 0; letter-spacing: -0.01em; }
 
 nav { display: flex; gap: 0.25rem; flex: 1; flex-wrap: wrap; }
-nav button {
-  border: 0; background: none; color: var(--muted);
-  padding: 0.35rem 0.6rem; border-radius: 4px; cursor: pointer; font: inherit;
+nav a {
+  color: var(--muted); text-decoration: none;
+  padding: 0.35rem 0.6rem; border-radius: 4px;
 }
-nav button:hover { background: var(--panel); color: var(--fg); }
-nav button[aria-current="page"] { background: var(--panel); color: var(--fg); font-weight: 600; }
+nav a:hover { background: var(--panel); color: var(--fg); }
+nav a.on { background: var(--panel); color: var(--fg); font-weight: 600; }
 
-.key { display: flex; gap: 0.4rem; }
-.key input { width: 17rem; }
+main { padding: 1.25rem; max-width: 1400px; }
+
+h2 { font-size: 1rem; margin: 0 0 0.25rem; }
+h3 { font-size: 0.9rem; margin: 1.5rem 0 0.5rem; color: var(--muted); }
+.hint { color: var(--muted); margin: 0 0 1rem; max-width: 72ch; }
+.hint.warn { color: var(--warn); }
 
 input, select, button, textarea {
   font: inherit; color: var(--fg); background: var(--bg);
@@ -60,17 +63,8 @@ input, select, button, textarea {
 }
 button { cursor: pointer; background: var(--panel); }
 button:hover { border-color: var(--accent); }
-
-main { padding: 1.25rem; max-width: 1400px; }
-
-.banner {
-  padding: 0.6rem 0.85rem; border-radius: 4px; margin-bottom: 1rem;
-  border: 1px solid var(--line); background: var(--panel);
-}
-.banner.error { border-color: var(--bad); color: var(--bad); }
-
-h2 { font-size: 1rem; margin: 0 0 0.25rem; }
-.hint { color: var(--muted); margin: 0 0 1rem; max-width: 68ch; }
+button:disabled { opacity: 0.5; cursor: default; }
+button.quiet { border-color: transparent; background: none; color: var(--muted); }
 
 .filters { display: flex; gap: 0.5rem; margin-bottom: 1rem; flex-wrap: wrap; }
 
@@ -81,15 +75,17 @@ th, td {
 }
 th { color: var(--muted); font-weight: 600; white-space: nowrap; }
 tbody tr:hover { background: var(--panel); }
-td.num, td.mono, th.num { font-family: var(--mono); }
-td.num, th.num { text-align: right; white-space: nowrap; }
+tr.clickable { cursor: pointer; }
+td.mono, .mono { font-family: var(--mono); }
+td.num, th.num { font-family: var(--mono); text-align: right; white-space: nowrap; }
 
 /* Status carries meaning, so it is never colour alone — the word is always
-   there too, for anyone who cannot distinguish them. */
+   there too, for anyone who cannot distinguish them and for anybody who
+   pastes the row into a chat window. */
 .status { font-weight: 600; }
-.status.success { color: var(--ok); }
-.status.failed, .status.reversed { color: var(--bad); }
-.status.pending { color: var(--warn); }
+.status.success, .status.succeeded { color: var(--ok); }
+.status.failed, .status.reversed, .status.dead_letter { color: var(--bad); }
+.status.pending, .status.in_flight { color: var(--warn); }
 .status.unknown { color: var(--unknown); }
 .status.abandoned { color: var(--muted); }
 
@@ -101,7 +97,12 @@ td.num, th.num { text-align: right; white-space: nowrap; }
 
 .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 0.75rem; margin-bottom: 1.5rem; }
 .card { border: 1px solid var(--line); border-radius: 6px; padding: 0.8rem; background: var(--panel); }
-.card .n { font-family: var(--mono); font-size: 1.6rem; line-height: 1.2; }
+.card.wide { grid-column: 1 / -1; margin-bottom: 0.75rem; }
+.card .n { font-family: var(--mono); font-size: 1.5rem; line-height: 1.2; }
+.card .n.small { font-size: 0.9rem; }
+.card .n.ok { color: var(--ok); }
+.card .n.bad { color: var(--bad); }
+.card .n.warn { color: var(--warn); }
 .card .l { color: var(--muted); font-size: 12px; }
 
 pre {
@@ -109,8 +110,17 @@ pre {
   padding: 0.75rem; overflow-x: auto; font-family: var(--mono); font-size: 12px;
   margin: 0 0 1rem;
 }
+code { font-family: var(--mono); font-size: 0.92em; }
+
+.banner {
+  padding: 0.6rem 0.85rem; border-radius: 4px; margin-bottom: 1rem;
+  border: 1px solid var(--line); background: var(--panel);
+}
+.banner.error { border-color: var(--bad); color: var(--bad); }
 
 .empty { color: var(--muted); padding: 2rem 0; }
+
+a { color: var(--accent); }
 
 footer {
   padding: 0.6rem 1.25rem; border-top: 1px solid var(--line);

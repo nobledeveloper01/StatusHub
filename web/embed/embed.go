@@ -1,11 +1,11 @@
-// Package embed carries the dashboard into the binary.
+// Package embed carries the built dashboard into the binary.
 //
-// The files are plain HTML, CSS and JavaScript with no build step and no
-// dependencies. That is a deliberate trade: a bundler would buy component
-// reuse and cost every operator a Node toolchain in their build, every
-// security team a dependency tree to review, and this repository a
-// lockfile-shaped supply-chain surface. The dashboard is eight screens of
-// tables and forms, which is not enough to justify any of that.
+// `web/embed/dist` is committed, deliberately. The alternative — building the
+// dashboard as part of the Go build — puts a Node toolchain in the path of
+// anybody who wants to compile the server, including a customer's build
+// pipeline and a security team reproducing a release. `go build` needs Go and
+// nothing else, and the cost is remembering `make web` after changing
+// anything under web/src. CI enforces that.
 package embed
 
 import (

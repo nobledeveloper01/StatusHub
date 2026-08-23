@@ -135,6 +135,24 @@ jobs:
           python -m pip install --quiet pytest
           python -m pytest tests/ -q
 
+  dashboard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+
+      # web/embed/dist is committed so `go build` needs no Node toolchain.
+      # The cost is remembering `make web`, so CI does the remembering: a
+      # rebuild that differs from what is committed means somebody changed
+      # the dashboard's source and shipped the old build.
+      - name: The embedded dashboard matches its source
+        run: |
+          cd web && npm install --silent && npm run build && cd ..
+          rm -rf web/embed/dist && cp -r web/dist web/embed/dist
+          git diff --exit-code web/embed/dist \
+            || { echo "web/embed/dist is stale — run 'make web' and commit the result"; exit 1; }
+
   manifests:
     runs-on: ubuntu-latest
     steps:
@@ -195,7 +213,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   build:
-    needs: [quality, lint, manifests, security]
+    needs: [quality, lint, manifests, dashboard, security]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
