@@ -30,6 +30,10 @@ type Server struct {
 	// adapterStore holds uploaded declarative adapters per tenant.
 	adapterStore AdapterStore
 
+	// idempotency remembers completed writes so a retry returns the original
+	// result rather than creating a second resource (§8.6).
+	idempotency IdempotencyStore
+
 	// baseURL is where providers POST. Configurable because a self-hosted
 	// install is not at hooks.statushub.dev, and a receiver URL that names
 	// the wrong host is a URL nobody can use.
@@ -47,6 +51,7 @@ type Options struct {
 	Metrics      *metrics.Registry
 	Logger       *slog.Logger
 	AdapterStore AdapterStore
+	Idempotency  IdempotencyStore
 	BaseURL      string
 	Now          func() time.Time
 }
@@ -56,7 +61,8 @@ func New(o Options) *Server {
 	s := &Server{
 		store: o.Store, keys: o.Keys, registry: o.Registry, dispatcher: o.Dispatcher,
 		secrets: o.Secrets, guard: o.Guard, metrics: o.Metrics, log: o.Logger,
-		adapterStore: o.AdapterStore, baseURL: o.BaseURL, now: o.Now,
+		adapterStore: o.AdapterStore, idempotency: o.Idempotency,
+		baseURL: o.BaseURL, now: o.Now,
 	}
 	if s.log == nil {
 		s.log = slog.Default()
@@ -69,6 +75,9 @@ func New(o Options) *Server {
 	}
 	if s.adapterStore == nil {
 		s.adapterStore = NewMemoryAdapterStore()
+	}
+	if s.idempotency == nil {
+		s.idempotency = NewMemoryIdempotencyStore()
 	}
 	return s
 }
@@ -88,22 +97,22 @@ func (s *Server) Handler() http.Handler {
 	authed := http.NewServeMux()
 
 	// Endpoints — the receiver URLs providers are pointed at.
-	authed.HandleFunc("POST /v1/endpoints", requireRole(auth.RoleEngineer, s.handleCreateEndpoint))
+	authed.HandleFunc("POST /v1/endpoints", requireRole(auth.RoleEngineer, s.idempotent(s.handleCreateEndpoint)))
 	authed.HandleFunc("GET /v1/endpoints", requireRole(auth.RoleReadOnly, s.handleListEndpoints))
 	authed.HandleFunc("GET /v1/endpoints/{id}", requireRole(auth.RoleReadOnly, s.handleGetEndpoint))
 	authed.HandleFunc("DELETE /v1/endpoints/{id}", requireRole(auth.RoleEngineer, s.handleDeleteEndpoint))
-	authed.HandleFunc("POST /v1/endpoints/{id}/rotate-token", requireRole(auth.RoleEngineer, s.handleRotateToken))
+	authed.HandleFunc("POST /v1/endpoints/{id}/rotate-token", requireRole(auth.RoleEngineer, s.idempotent(s.handleRotateToken)))
 	authed.HandleFunc("GET /v1/endpoints/{id}/signature-failures", requireRole(auth.RoleSupport, s.handleSignatureFailures))
 
 	// Destinations — where events are forwarded.
-	authed.HandleFunc("POST /v1/destinations", requireRole(auth.RoleEngineer, s.handleCreateDestination))
+	authed.HandleFunc("POST /v1/destinations", requireRole(auth.RoleEngineer, s.idempotent(s.handleCreateDestination)))
 	authed.HandleFunc("GET /v1/destinations", requireRole(auth.RoleReadOnly, s.handleListDestinations))
 	authed.HandleFunc("GET /v1/destinations/{id}", requireRole(auth.RoleReadOnly, s.handleGetDestination))
 	authed.HandleFunc("DELETE /v1/destinations/{id}", requireRole(auth.RoleEngineer, s.handleDeleteDestination))
 
 	// Adapters.
 	authed.HandleFunc("GET /v1/adapters", requireRole(auth.RoleReadOnly, s.handleListAdapters))
-	authed.HandleFunc("POST /v1/adapters", requireRole(auth.RoleEngineer, s.handleUploadAdapter))
+	authed.HandleFunc("POST /v1/adapters", requireRole(auth.RoleEngineer, s.idempotent(s.handleUploadAdapter)))
 	authed.HandleFunc("POST /v1/adapters/{name}/test", requireRole(auth.RoleEngineer, s.handleTestAdapter))
 	authed.HandleFunc("DELETE /v1/adapters/{name}", requireRole(auth.RoleEngineer, s.handleDeleteAdapter))
 
@@ -111,12 +120,12 @@ func (s *Server) Handler() http.Handler {
 	authed.HandleFunc("GET /v1/events", requireRole(auth.RoleReadOnly, s.handleQueryEvents))
 	authed.HandleFunc("GET /v1/events/{id}", requireRole(auth.RoleReadOnly, s.handleGetEvent))
 	authed.HandleFunc("GET /v1/events/{id}/raw", requireRole(auth.RoleSupport, s.handleGetRawPayload))
-	authed.HandleFunc("POST /v1/events/{id}/replay", requireRole(auth.RoleSupport, s.handleReplayEvent))
-	authed.HandleFunc("POST /v1/events/replay", requireRole(auth.RoleSupport, s.handleBulkReplay))
+	authed.HandleFunc("POST /v1/events/{id}/replay", requireRole(auth.RoleSupport, s.idempotent(s.handleReplayEvent)))
+	authed.HandleFunc("POST /v1/events/replay", requireRole(auth.RoleSupport, s.idempotent(s.handleBulkReplay)))
 
 	// Deliveries and dead letters.
 	authed.HandleFunc("GET /v1/deliveries", requireRole(auth.RoleReadOnly, s.handleQueryDeliveries))
-	authed.HandleFunc("POST /v1/deliveries/{id}/retry", requireRole(auth.RoleSupport, s.handleRetryDelivery))
+	authed.HandleFunc("POST /v1/deliveries/{id}/retry", requireRole(auth.RoleSupport, s.idempotent(s.handleRetryDelivery)))
 
 	// The to-do list the product generates for itself.
 	authed.HandleFunc("GET /v1/unknown-statuses", requireRole(auth.RoleReadOnly, s.handleUnknownStatuses))
@@ -126,7 +135,7 @@ func (s *Server) Handler() http.Handler {
 	authed.HandleFunc("GET /v1/audit/verify", requireRole(auth.RoleReadOnly, s.handleVerifyAudit))
 
 	// Keys. Owner only: a key that can issue keys is a key that can escalate.
-	authed.HandleFunc("POST /v1/keys", requireRole(auth.RoleOwner, s.handleCreateKey))
+	authed.HandleFunc("POST /v1/keys", requireRole(auth.RoleOwner, s.idempotent(s.handleCreateKey)))
 	authed.HandleFunc("GET /v1/keys", requireRole(auth.RoleOwner, s.handleListKeys))
 	authed.HandleFunc("DELETE /v1/keys/{id}", requireRole(auth.RoleOwner, s.handleRevokeKey))
 
