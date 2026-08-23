@@ -67,6 +67,7 @@ func New() *Registry {
 
 	r.gauge("statushub_delivery_queue_depth", "Deliveries not yet terminal, by shard.")
 	r.gauge("statushub_shard_oldest_pending_seconds", "Age of the oldest pending delivery in a shard. Head-of-line blocking shows up here first.")
+	r.gauge("statushub_destination_breaker_open", "1 when a destination's circuit breaker is not closed. Deliveries to it are parked, not failing.")
 	r.gauge("statushub_build_info", "Always 1. Labels carry the version and commit.")
 	r.gauge("statushub_audit_chain_intact", "1 when the nightly walk of a tenant's audit chain verified, 0 when it did not.")
 

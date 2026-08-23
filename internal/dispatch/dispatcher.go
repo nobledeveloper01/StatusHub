@@ -29,6 +29,16 @@ import (
 	"github.com/nobledeveloper01/StatusHub/internal/store"
 )
 
+// MaxOutageParking bounds how long a delivery may be parked behind an open
+// circuit breaker before it dead-letters anyway.
+//
+// Twenty-four hours. Long enough that a destination-wide outage — including
+// one that starts on a Friday evening — resolves without anybody having to
+// replay by hand, and short enough that a destination which has been
+// decommissioned without telling us produces visible dead letters within a
+// day rather than an ever-growing parked queue nobody is looking at.
+const MaxOutageParking = 24 * time.Hour
+
 // maxResponseBody is how much of a destination's response is kept.
 //
 // One kilobyte. "Their endpoint returned 400" is not a diagnosis; "their
@@ -45,6 +55,7 @@ type Dispatcher struct {
 	log     *slog.Logger
 	client  *http.Client
 	guard   *Guard
+	breaker *Breaker
 	shards  int
 	now     func() time.Time
 }
@@ -56,6 +67,7 @@ type Options struct {
 	Metrics *metrics.Registry
 	Logger  *slog.Logger
 	Guard   *Guard
+	Breaker *Breaker
 	Shards  int
 	Now     func() time.Time
 
@@ -73,6 +85,7 @@ func New(o Options) (*Dispatcher, error) {
 		metrics: o.Metrics,
 		log:     o.Logger,
 		guard:   o.Guard,
+		breaker: o.Breaker,
 		shards:  o.Shards,
 		now:     o.Now,
 		client:  o.Client,
@@ -95,6 +108,9 @@ func New(o Options) (*Dispatcher, error) {
 			return nil, err
 		}
 		d.guard = g
+	}
+	if d.breaker == nil {
+		d.breaker = NewBreaker(BreakerOptions{Now: d.now})
 	}
 	if d.client == nil {
 		dialer := &net.Dialer{Timeout: 5 * time.Second, KeepAlive: 30 * time.Second}
@@ -220,6 +236,12 @@ func (d *Dispatcher) DeliverOnce(ctx context.Context, del domain.Delivery) error
 		return d.fail(ctx, del, 0, "", fmt.Sprintf("destination not found: %v", err), start, false)
 	}
 
+	// The breaker check happens after the destination is loaded and before
+	// anything is sent. A parked delivery costs no attempt: see park.
+	if allowed, why := d.breaker.Allow(dest.ID); !allowed {
+		return d.park(ctx, del, dest, why)
+	}
+
 	var raw []byte
 	if dest.IncludeRaw {
 		if r, err := d.store.GetRawEvent(ctx, del.TenantID, event.RawEventID); err == nil {
@@ -267,6 +289,9 @@ func (d *Dispatcher) DeliverOnce(ctx context.Context, del domain.Delivery) error
 	resp, err := d.client.Do(req)
 	if err != nil {
 		reason := err.Error()
+		// A transport failure says something about the destination's health
+		// rather than about this event, so it counts towards the breaker.
+		d.recordBreaker(dest.ID, false, reason)
 		if errors.Is(err, ErrPrivateAddress) {
 			// A destination that resolved publicly at registration and
 			// privately now is a rebinding attempt, not a typo. It is
@@ -289,10 +314,18 @@ func (d *Dispatcher) DeliverOnce(ctx context.Context, del domain.Delivery) error
 
 	switch {
 	case domain.IsSuccess(resp.StatusCode):
+		d.recordBreaker(dest.ID, true, "")
 		return d.succeed(ctx, del, resp.StatusCode, string(respBody), start)
+	case resp.StatusCode >= 500 || resp.StatusCode == 429:
+		// 5xx and 429 are the destination telling us about itself. A 408 is
+		// ambiguous enough to retry but not to judge health on.
+		d.recordBreaker(dest.ID, false, fmt.Sprintf("destination returned %d", resp.StatusCode))
+		return d.retry(ctx, del, dest, resp.StatusCode, string(respBody), "", start)
 	case domain.ShouldRetry(resp.StatusCode):
 		return d.retry(ctx, del, dest, resp.StatusCode, string(respBody), "", start)
 	default:
+		// A 4xx is about this payload, not the destination. Counting it would
+		// trip the breaker for every other event because one was malformed.
 		// A 400 saying the payload is malformed will say the same thing in
 		// six hours. Retrying it only delays the dead letter the operator
 		// needs to see.
@@ -300,6 +333,67 @@ func (d *Dispatcher) DeliverOnce(ctx context.Context, del domain.Delivery) error
 			fmt.Sprintf("destination returned %d, which will not change on retry", resp.StatusCode), start, true)
 	}
 }
+
+// park defers a delivery because the destination's breaker is open.
+//
+// The attempt counter is rolled back, so an outage does not silently spend
+// every queued event's retry budget and dead-letter the lot at the moment the
+// customer's service recovers. That would turn a recoverable outage into a
+// bulk replay, which is the opposite of what a breaker is for.
+func (d *Dispatcher) park(ctx context.Context, del domain.Delivery, dest domain.Destination, why string) error {
+	if del.Attempt > 0 {
+		del.Attempt--
+	}
+	del.Status = domain.DeliveryFailed
+	del.Error = truncate("parked: " + why)
+	del.NextRetryAt = d.now().Add(d.breakerRetryDelay(dest))
+
+	d.metrics.Inc("statushub_deliveries_total", metrics.Labels{
+		"destination": dest.ID, "status": "parked",
+	})
+	d.metrics.Set("statushub_destination_breaker_open",
+		metrics.Labels{"destination": dest.ID}, 1)
+	return d.store.CompleteDelivery(ctx, del)
+}
+
+// breakerRetryDelay is how long a parked delivery waits. Short, because the
+// breaker itself decides when the next probe goes out — this only controls
+// how often the dispatcher asks.
+func (d *Dispatcher) breakerRetryDelay(dest domain.Destination) time.Duration {
+	policy := dest.RetryPolicy
+	if len(policy.Backoff) == 0 {
+		policy = domain.DefaultRetryPolicy()
+	}
+	if policy.Timeout > 0 && policy.Timeout < 30*time.Second {
+		return policy.Timeout
+	}
+	return 15 * time.Second
+}
+
+// recordBreaker feeds an outcome to the breaker and publishes the gauge.
+func (d *Dispatcher) recordBreaker(destinationID string, ok bool, reason string) {
+	if ok {
+		d.breaker.Succeeded(destinationID)
+		d.metrics.Set("statushub_destination_breaker_open",
+			metrics.Labels{"destination": destinationID}, 0)
+		return
+	}
+	state := d.breaker.Failed(destinationID, reason)
+	open := 0.0
+	if state != BreakerClosed {
+		open = 1
+	}
+	d.metrics.Set("statushub_destination_breaker_open",
+		metrics.Labels{"destination": destinationID}, open)
+	if state == BreakerOpen {
+		d.log.Warn("destination circuit breaker opened; deliveries are parked without consuming their retry budget",
+			"destination", destinationID, "reason", reason)
+	}
+}
+
+// Breaker exposes the breaker, for the destination-health view and for an
+// operator resetting one by hand.
+func (d *Dispatcher) Breaker() *Breaker { return d.breaker }
 
 func (d *Dispatcher) succeed(ctx context.Context, del domain.Delivery, code int, body string, start time.Time) error {
 	del.Status = domain.DeliverySucceeded
@@ -337,9 +431,28 @@ func (d *Dispatcher) retry(ctx context.Context, del domain.Delivery, dest domain
 	del.DurationMS = int(d.now().Sub(start).Milliseconds())
 
 	if del.Attempt >= policy.Attempts() {
-		// Budget spent. Dead-lettering rather than retrying forever is what
-		// unblocks the transaction's ordering key: a single unreachable
-		// endpoint must not stall a shard indefinitely (§4.5).
+		// The budget is spent — but *why* matters, and this is the one place
+		// where the breaker changes the outcome rather than only the timing.
+		//
+		// A retry budget answers "how long do we try this event against a
+		// working destination". When the destination is down wholesale, the
+		// question is different: the event is fine, and dead-lettering it
+		// means an outage silently converts every queued event into something
+		// an operator has to find and replay by hand. So while the breaker is
+		// open the delivery is parked instead, up to a bounded outage window.
+		//
+		// The window is what keeps this from being unbounded. Past it, the
+		// destination is not having an outage — it is gone — and the events
+		// belong in the dead-letter queue where somebody will see them.
+		if state := d.breaker.State(dest.ID); state != BreakerClosed &&
+			d.now().Sub(del.CreatedAt) < MaxOutageParking {
+			return d.park(ctx, del, dest, fmt.Sprintf(
+				"destination breaker is %s; the retry budget is not spent during a destination-wide outage", state))
+		}
+
+		// Dead-lettering rather than retrying forever is what unblocks the
+		// transaction's ordering key: a single unreachable endpoint must not
+		// stall a shard indefinitely (§4.5).
 		del.Status = domain.DeliveryDeadLetter
 		del.NextRetryAt = time.Time{}
 		d.metrics.Inc("statushub_dead_letter_total", metrics.Labels{"tenant": del.TenantID})

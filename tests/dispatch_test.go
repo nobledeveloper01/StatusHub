@@ -99,10 +99,17 @@ func (c *testClock) advance(d time.Duration) {
 }
 
 func newDispatchHarness(t *testing.T, policy domain.RetryPolicy) *dispatchHarness {
+	return newDispatchHarnessWith(t, policy, nil)
+}
+
+func newDispatchHarnessWith(t *testing.T, policy domain.RetryPolicy, breaker *dispatch.Breaker, clocks ...*testClock) *dispatchHarness {
 	t.Helper()
 	s := memStore(t)
 	sk := newSink(t)
 	clock := &testClock{t: time.Date(2026, 8, 11, 9, 0, 0, 0, time.UTC)}
+	if len(clocks) > 0 && clocks[0] != nil {
+		clock = clocks[0]
+	}
 
 	dest := domain.Destination{
 		ID: domain.NewID(domain.PrefixDestination), TenantID: tenantA, Name: "ledger",
@@ -119,7 +126,7 @@ func newDispatchHarness(t *testing.T, policy domain.RetryPolicy) *dispatchHarnes
 
 	d, err := dispatch.New(dispatch.Options{
 		Store: s, Secrets: staticSecrets(signingRef, signingSecret),
-		Guard: guard, Shards: 8, Now: clock.now,
+		Guard: guard, Breaker: breaker, Shards: 8, Now: clock.now,
 	})
 	mustNoErr(t, err, "building the dispatcher")
 
