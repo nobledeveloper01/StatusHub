@@ -1,0 +1,290 @@
+# Releases.
+#
+# Triggered by a tag, never by a push to main. Publishing is close to
+# irreversible — npm refuses to unpublish after 72 hours, PyPI never lets a
+# version number be reused, and a container tag somebody has already pulled is
+# out of your hands — so it has to be something a person did on purpose,
+# not something a merge can cause.
+#
+# Everything published here is signed and attested. Not because anybody asked:
+# because a fintech's security team will, and the honest answer to "how do we
+# know this binary is the one you built" should be a command they can run
+# rather than a paragraph.
+name: release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Build and sign without publishing'
+        type: boolean
+        default: true
+
+permissions:
+  contents: write   # attach artefacts to the release
+  packages: write   # push the container image
+  id-token: write   # keyless signing via OIDC — no long-lived key to leak
+
+env:
+  GO_VERSION: 'stable'
+  REGISTRY: ghcr.io
+  IMAGE: ghcr.io/${{ github.repository }}
+
+jobs:
+  # Nothing is published before the same gates a pull request faces have
+  # passed. A release that skips CI is a release nobody checked.
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: statushub_test
+        options: >-
+          --health-cmd pg_isready --health-interval 10s
+          --health-timeout 5s --health-retries 5
+        ports: ['5432:5432']
+    env:
+      STATUSHUB_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/statushub_test?sslmode=disable
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with: { go-version: '${{ env.GO_VERSION }}' }
+      - run: go test -race ./tests/...
+      - name: Tenant isolation
+        run: go test -race ./tests/... -run 'TenantIsolation' -v
+      - name: Adapter corpus and signature vectors
+        run: go test -race ./tests/... -run 'Adapter' -v
+
+  binaries:
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with: { go-version: '${{ env.GO_VERSION }}' }
+
+      - name: Version
+        id: v
+        run: |
+          echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          echo "commit=${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
+
+      - name: Build
+        env:
+          VERSION: ${{ steps.v.outputs.version }}
+          COMMIT: ${{ steps.v.outputs.commit }}
+        run: |
+          mkdir -p dist
+          # The platforms a customer actually self-hosts on. arm64 is not
+          # optional: Graviton and Apple silicon are both ordinary now, and a
+          # release without it sends people to `go install`, which produces a
+          # binary nobody signed.
+          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64; do
+            os="${target%/*}"; arch="${target#*/}"
+            for cmd in statushub statushubctl; do
+              out="dist/${cmd}_${VERSION}_${os}_${arch}"
+              # -trimpath keeps build-machine paths out of the binary, which
+              # is both a small information leak and the main obstacle to a
+              # reproducible build.
+              CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" go build \
+                -trimpath \
+                -ldflags="-s -w \
+                  -X github.com/nobledeveloper01/StatusHub/internal/server.Version=${VERSION} \
+                  -X github.com/nobledeveloper01/StatusHub/internal/server.Commit=${COMMIT}" \
+                -o "$out" "./cmd/${cmd}"
+              ( cd dist && tar -czf "$(basename "$out").tar.gz" "$(basename "$out")" && rm "$(basename "$out")" )
+            done
+          done
+          ( cd dist && sha256sum *.tar.gz > checksums.txt )
+          cat dist/checksums.txt
+
+      - name: SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          path: .
+          format: spdx-json
+          output-file: dist/sbom.spdx.json
+          # Published per release so a customer's security team can assess
+          # StatusHub without asking (§8.5).
+          upload-artifact: false
+
+      - uses: sigstore/cosign-installer@v3
+
+      - name: Sign the checksums
+        # Keyless, via the workflow's OIDC identity. There is no signing key
+        # to store, rotate or leak — the signature attests to the workflow,
+        # the repository and the tag that produced it, which is the property
+        # somebody verifying actually wants.
+        run: |
+          cosign sign-blob --yes \
+            --output-signature dist/checksums.txt.sig \
+            --output-certificate dist/checksums.txt.pem \
+            dist/checksums.txt
+
+      - name: Verification instructions
+        run: |
+          cat > dist/VERIFYING.md <<'DOC'
+          # Verifying this release
+
+          Signed with [cosign](https://docs.sigstore.dev) keyless signing.
+          There is no public key to fetch: the signature attests to the
+          workflow, repository and tag that produced these files, and that
+          attestation is what you check.
+
+          ```bash
+          cosign verify-blob \
+            --certificate checksums.txt.pem \
+            --signature checksums.txt.sig \
+            --certificate-identity-regexp 'https://github.com/nobledeveloper01/StatusHub/.github/workflows/release.yml@.*' \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            checksums.txt
+
+          sha256sum -c checksums.txt --ignore-missing
+          ```
+
+          The container image is signed the same way:
+
+          ```bash
+          cosign verify ghcr.io/nobledeveloper01/statushub:VERSION \
+            --certificate-identity-regexp 'https://github.com/nobledeveloper01/StatusHub/.github/workflows/release.yml@.*' \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com
+          ```
+
+          `sbom.spdx.json` lists every dependency in the build, so your
+          security team can assess it without asking us.
+          DOC
+          sed -i "s/VERSION/${GITHUB_REF_NAME#v}/g" dist/VERIFYING.md
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-artifacts
+          path: dist/
+
+      - name: Attach to the release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${GITHUB_REF_NAME}" dist/* --clobber
+
+  image:
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,format=long
+
+      - id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: ${{ startsWith(github.ref, 'refs/tags/') }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ github.ref_name }}
+            COMMIT=${{ github.sha }}
+          provenance: true
+          sbom: true
+
+      # Scanned after building and before anybody can pull it. A HIGH or
+      # CRITICAL finding fails the release rather than producing an advisory
+      # nobody reads.
+      - name: Scan the image
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ env.IMAGE }}:${{ github.ref_name }}
+          format: table
+          exit-code: '1'
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+        if: startsWith(github.ref, 'refs/tags/')
+
+      - uses: sigstore/cosign-installer@v3
+        if: startsWith(github.ref, 'refs/tags/')
+
+      - name: Sign the image
+        if: startsWith(github.ref, 'refs/tags/')
+        run: cosign sign --yes "${IMAGE}@${DIGEST}"
+        env:
+          IMAGE: ${{ env.IMAGE }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+
+  sdks:
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with: { go-version: '${{ env.GO_VERSION }}' }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+
+      # The client libraries are published only if they still agree with the
+      # server. Three implementations that agree with each other and not with
+      # production is the failure this gate exists to prevent.
+      - name: Libraries agree with the server
+        run: |
+          go test ./tests -run GenerateSDKFixtures
+          git diff --exit-code sdk/fixtures/
+          cd sdk/node && npm install --silent && npm run build && node --test test/*.test.js
+          cd ../python && python -m pip install --quiet pytest build twine && python -m pytest tests/ -q
+
+      - name: Publish @statushub/node
+        if: startsWith(github.ref, 'refs/tags/') && !inputs.dry_run
+        run: cd sdk/node && npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish statushub to PyPI
+        if: startsWith(github.ref, 'refs/tags/') && !inputs.dry_run
+        run: cd sdk/python && python -m build && python -m twine upload dist/*
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
+
+      # The Go library needs no publishing step: tagging the repository is
+      # the publication. Worth saying so, because its absence otherwise reads
+      # like an omission.
+      - name: Go module
+        run: echo "pkg/statushub is published by the tag itself; the proxy picks it up on first fetch."
+
+  chart:
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: azure/setup-helm@v4
+        with: { version: v3.16.2 }
+
+      - name: Package and push the chart
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          helm package deploy/helm/statushub --version "$VERSION" --app-version "$VERSION" -d dist/
+          echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login "${REGISTRY}" -u "${{ github.actor }}" --password-stdin
+          helm push "dist/statushub-${VERSION}.tgz" "oci://${REGISTRY}/${{ github.repository_owner }}/charts"

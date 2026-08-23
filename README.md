@@ -106,6 +106,24 @@ statushubctl destinations create --tenant acme \
 
 Paste the printed receiver URL into Paystack's dashboard. You are done.
 
+### From a release
+
+Signed binaries for linux and darwin, amd64 and arm64, are attached to every
+[release](https://github.com/nobledeveloper01/StatusHub/releases) with
+checksums, a cosign signature and an SPDX SBOM.
+
+```bash
+cosign verify-blob \
+  --certificate checksums.txt.pem --signature checksums.txt.sig \
+  --certificate-identity-regexp 'https://github.com/nobledeveloper01/StatusHub/.github/workflows/release.yml@.*' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  checksums.txt
+```
+
+Keyless: there is no public key to fetch, because the signature attests to the
+workflow, repository and tag that produced the file. That attestation is what
+you actually want to check.
+
 ### From source
 
 ```bash
@@ -850,9 +868,20 @@ Built and tested:
 - [x] `statushubctl doctor`
 - [x] Canonical schema versioning per destination
 
-Still open: multi-region deployment, Helm and Terraform, an OpenAPI document
-generated from the routes rather than maintained beside them, and Kafka/SQS
-sink delivery for tenants who want events on a bus rather than an endpoint.
+**Shipped since:**
+
+- [x] OpenAPI 3.1 at [docs/openapi.yaml](docs/openapi.yaml), generated from the
+      route table the router itself is built from, with a CI gate that fails
+      when the two disagree
+- [x] [Helm chart and Terraform module](deploy/), with the receiver and
+      dispatcher as separate workloads and manifests validated against the
+      Kubernetes schemas in CI
+- [x] Release pipeline: signed multi-platform binaries, SPDX SBOM, cosign
+      keyless signing, trivy gate, npm and PyPI publishing on a tag
+
+Still open: multi-region deployment, and Kafka/SQS sink delivery — which §3.3
+puts out of scope for v1 deliberately, since it is a different product
+decision rather than an unfinished one.
 
 ---
 
