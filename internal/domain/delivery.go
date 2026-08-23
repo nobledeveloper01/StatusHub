@@ -32,6 +32,12 @@ type Delivery struct {
 	EventID       string
 	DestinationID string
 
+	// TransactionRef is denormalised onto the delivery. It is duplicated from
+	// the canonical event, and it earns its place: the dispatcher's claim
+	// query groups on it to enforce ordering, and joining the events table on
+	// every claim would put the largest table in the system on the hot path.
+	TransactionRef string
+
 	// Shard is derived from the transaction reference so that every event
 	// about one transaction lands on the same queue and is delivered in
 	// order (§4.5).

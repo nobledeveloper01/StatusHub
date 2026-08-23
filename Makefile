@@ -69,6 +69,10 @@ db-setup: ## Create the local test database
 db-drop: ## Drop the local test database
 	@dropdb --if-exists $(TEST_DB)
 
+sync-migrations: ## Copy migrations/ into the embedded copy the binary ships with
+	rm -f internal/migrate/sql/*.sql
+	cp $(MIGRATIONS)/*.sql internal/migrate/sql/
+
 migrate-up: ## Apply pending migrations to TEST_DB
 	STATUSHUB_DATABASE_URL="$(TEST_DB_URL)" go run ./cmd/statushubctl migrate up
 
@@ -88,4 +92,4 @@ test-sdks: ## The Node and Python client libraries, against the Go-signed fixtur
 	cd sdk/node && npm install --silent && npm run build && node --test test/*.test.js
 	cd sdk/python && python3 -m pytest tests/ -q
 
-ci: fmt vet crosscheck lint test-integration ## What CI runs
+ci: fmt vet crosscheck lint sync-migrations test-integration ## What CI runs

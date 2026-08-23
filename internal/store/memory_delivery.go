@@ -15,6 +15,11 @@ func (m *Memory) EnqueueDelivery(_ context.Context, d domain.Delivery) (int64, e
 	defer m.mu.Unlock()
 	m.deliveryIDs++
 	d.ID = m.deliveryIDs
+	if d.TransactionRef == "" {
+		if e, ok := m.events[d.EventID]; ok {
+			d.TransactionRef = e.TransactionRef
+		}
+	}
 	if d.CreatedAt.IsZero() {
 		d.CreatedAt = time.Now().UTC()
 	}
@@ -110,9 +115,14 @@ func (m *Memory) ClaimDue(_ context.Context, shard int, now time.Time, limit int
 	return claimed, nil
 }
 
-// refFor resolves a delivery's transaction reference through its event.
-// Callers hold m.mu.
+// refFor resolves a delivery's transaction reference. It prefers the
+// denormalised copy, falling back to the event, so a delivery enqueued
+// without one still orders correctly rather than silently getting a key of
+// its own.
 func (m *Memory) refFor(d domain.Delivery) string {
+	if d.TransactionRef != "" {
+		return d.TransactionRef
+	}
 	if e, ok := m.events[d.EventID]; ok {
 		return e.TransactionRef
 	}
