@@ -46,29 +46,39 @@ const MaxOutageParking = 24 * time.Hour
 // a storage bill and a data-protection question rather than a debugging aid.
 const maxResponseBody = 1024
 
+// Listener is offered a copy of every delivered payload, for developers
+// listening locally. It is offered a copy and never given the original: a
+// developer running `listen` in the wrong terminal must not divert a
+// customer's production traffic.
+type Listener interface {
+	Publish(e domain.CanonicalEvent, payload []byte, signature string) int
+}
+
 // Dispatcher delivers events.
 type Dispatcher struct {
-	store   store.Store
-	secrets secret.Resolver
-	metrics *metrics.Registry
-	log     *slog.Logger
-	client  *http.Client
-	guard   *Guard
-	breaker *Breaker
-	shards  int
-	now     func() time.Time
+	store    store.Store
+	secrets  secret.Resolver
+	metrics  *metrics.Registry
+	log      *slog.Logger
+	client   *http.Client
+	guard    *Guard
+	breaker  *Breaker
+	listener Listener
+	shards   int
+	now      func() time.Time
 }
 
 // Options configure a Dispatcher.
 type Options struct {
-	Store   store.Store
-	Secrets secret.Resolver
-	Metrics *metrics.Registry
-	Logger  *slog.Logger
-	Guard   *Guard
-	Breaker *Breaker
-	Shards  int
-	Now     func() time.Time
+	Store    store.Store
+	Secrets  secret.Resolver
+	Metrics  *metrics.Registry
+	Logger   *slog.Logger
+	Guard    *Guard
+	Breaker  *Breaker
+	Listener Listener
+	Shards   int
+	Now      func() time.Time
 
 	// Client overrides the HTTP client. Supplied by tests; in production the
 	// client is built here so the SSRF guard's dialler cannot be left off by
@@ -79,15 +89,16 @@ type Options struct {
 // New builds a Dispatcher.
 func New(o Options) (*Dispatcher, error) {
 	d := &Dispatcher{
-		store:   o.Store,
-		secrets: o.Secrets,
-		metrics: o.Metrics,
-		log:     o.Logger,
-		guard:   o.Guard,
-		breaker: o.Breaker,
-		shards:  o.Shards,
-		now:     o.Now,
-		client:  o.Client,
+		store:    o.Store,
+		secrets:  o.Secrets,
+		metrics:  o.Metrics,
+		log:      o.Logger,
+		guard:    o.Guard,
+		breaker:  o.Breaker,
+		listener: o.Listener,
+		shards:   o.Shards,
+		now:      o.Now,
+		client:   o.Client,
 	}
 	if d.log == nil {
 		d.log = slog.Default()
@@ -289,6 +300,13 @@ func (d *Dispatcher) DeliverOnce(ctx context.Context, del domain.Delivery) error
 	// and a replay of the same event carry the same key. That is what lets a
 	// customer's handler turn our at-least-once into their exactly-once.
 	req.Header.Set("Idempotency-Key", event.ID)
+
+	// Offered to any developer listening locally, with the same bytes and the
+	// same signature the destination is about to receive — the point of
+	// `listen` is developing against the real thing.
+	if d.listener != nil {
+		d.listener.Publish(event, body, req.Header.Get(SignatureHeader))
+	}
 
 	resp, err := d.client.Do(req)
 	if err != nil {

@@ -13,6 +13,7 @@ import (
 	"github.com/nobledeveloper01/StatusHub/internal/metrics"
 	"github.com/nobledeveloper01/StatusHub/internal/secret"
 	"github.com/nobledeveloper01/StatusHub/internal/store"
+	"github.com/nobledeveloper01/StatusHub/internal/tunnel"
 )
 
 // Server is the management API.
@@ -29,6 +30,10 @@ type Server struct {
 
 	// adapterStore holds uploaded declarative adapters per tenant.
 	adapterStore AdapterStore
+
+	// tunnel streams live events to a developer's machine. Nil when this
+	// instance does not accept listen sessions.
+	tunnel *tunnel.Hub
 
 	// idempotency remembers completed writes so a retry returns the original
 	// result rather than creating a second resource (§8.6).
@@ -51,6 +56,7 @@ type Options struct {
 	Metrics      *metrics.Registry
 	Logger       *slog.Logger
 	AdapterStore AdapterStore
+	Tunnel       *tunnel.Hub
 	Idempotency  IdempotencyStore
 	BaseURL      string
 	Now          func() time.Time
@@ -61,7 +67,7 @@ func New(o Options) *Server {
 	s := &Server{
 		store: o.Store, keys: o.Keys, registry: o.Registry, dispatcher: o.Dispatcher,
 		secrets: o.Secrets, guard: o.Guard, metrics: o.Metrics, log: o.Logger,
-		adapterStore: o.AdapterStore, idempotency: o.Idempotency,
+		adapterStore: o.AdapterStore, tunnel: o.Tunnel, idempotency: o.Idempotency,
 		baseURL: o.BaseURL, now: o.Now,
 	}
 	if s.log == nil {
@@ -132,6 +138,15 @@ func (s *Server) Handler() http.Handler {
 	// Deliveries and dead letters.
 	authed.HandleFunc("GET /v1/deliveries", requireRole(auth.RoleReadOnly, s.handleQueryDeliveries))
 	authed.HandleFunc("POST /v1/deliveries/{id}/retry", requireRole(auth.RoleSupport, s.idempotent(s.handleRetryDelivery)))
+
+	// Streams live events to a developer's laptop. Engineer role, not
+	// read-only: sending live production payloads to an arbitrary machine is
+	// a data-egress decision rather than a read.
+	authed.HandleFunc("POST /v1/listen", requireRole(auth.RoleEngineer, s.handleStartListen))
+	authed.HandleFunc("GET /v1/listen", requireRole(auth.RoleReadOnly, s.handleListListen))
+	authed.HandleFunc("GET /v1/listen/{id}/poll", requireRole(auth.RoleEngineer, s.handlePollListen))
+	authed.HandleFunc("POST /v1/listen/{id}/report", requireRole(auth.RoleEngineer, s.handleReportListen))
+	authed.HandleFunc("DELETE /v1/listen/{id}", requireRole(auth.RoleEngineer, s.handleStopListen))
 
 	// The to-do list the product generates for itself.
 	authed.HandleFunc("GET /v1/unknown-statuses", requireRole(auth.RoleReadOnly, s.handleUnknownStatuses))

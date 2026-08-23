@@ -17,6 +17,7 @@ import (
 	"github.com/nobledeveloper01/StatusHub/internal/domain"
 	"github.com/nobledeveloper01/StatusHub/internal/secret"
 	"github.com/nobledeveloper01/StatusHub/internal/store"
+	"github.com/nobledeveloper01/StatusHub/internal/tunnel"
 )
 
 type apiHarness struct {
@@ -25,6 +26,7 @@ type apiHarness struct {
 	server  *httptest.Server
 	secrets *secret.Static
 	sink    *sink
+	tunnel  *tunnel.Hub
 
 	ownerA    string
 	ownerB    string
@@ -50,12 +52,13 @@ func newAPIHarness(t *testing.T) *apiHarness {
 	})
 	mustNoErr(t, err, "building the dispatcher")
 
+	hub := tunnel.NewHub(tunnel.Options{MaxWait: 50 * time.Millisecond})
 	srv := api.New(api.Options{
 		Store: s, Keys: keys, Registry: adapters.New(), Dispatcher: d,
-		Secrets: secrets, Guard: guard, BaseURL: "https://hooks.statushub.test",
+		Secrets: secrets, Guard: guard, Tunnel: hub, BaseURL: "https://hooks.statushub.test",
 	})
 
-	h := &apiHarness{store: s, keys: keys, secrets: secrets, sink: newSink(t)}
+	h := &apiHarness{store: s, keys: keys, secrets: secrets, sink: newSink(t), tunnel: hub}
 	h.server = httptest.NewServer(srv.Handler())
 	t.Cleanup(h.server.Close)
 

@@ -21,6 +21,7 @@ import (
 	"github.com/nobledeveloper01/StatusHub/internal/receive"
 	"github.com/nobledeveloper01/StatusHub/internal/secret"
 	"github.com/nobledeveloper01/StatusHub/internal/store"
+	"github.com/nobledeveloper01/StatusHub/internal/tunnel"
 )
 
 // Server owns the process's components and lifecycle.
@@ -37,6 +38,7 @@ type Server struct {
 
 	dispatcher *dispatch.Dispatcher
 	normaliser *normalise.Normaliser
+	tunnel     *tunnel.Hub
 
 	receiverHTTP *http.Server
 	apiHTTP      *http.Server
@@ -66,6 +68,7 @@ func New(ctx context.Context, cfg Config) (*Server, error) {
 
 	s.secrets = openSecrets(cfg)
 	s.keys = auth.NewMemoryKeyStore()
+	s.tunnel = tunnel.NewHub(tunnel.Options{})
 
 	guard, err := dispatch.NewGuard(dispatch.GuardOptions{
 		BlockedCIDRs: cfg.BlockedCIDRs,
@@ -80,6 +83,7 @@ func New(ctx context.Context, cfg Config) (*Server, error) {
 		d, err := dispatch.New(dispatch.Options{
 			Store: s.store, Secrets: s.secrets, Metrics: s.metrics,
 			Logger: log.With("component", "dispatcher"), Guard: guard, Shards: cfg.Shards,
+			Listener: s.tunnel,
 		})
 		if err != nil {
 			return nil, err
@@ -131,7 +135,7 @@ func New(ctx context.Context, cfg Config) (*Server, error) {
 	if cfg.Mode.RunsAPI() {
 		apiSrv := api.New(api.Options{
 			Store: s.store, Keys: s.keys, Registry: s.registry, Dispatcher: s.dispatcher,
-			Secrets: s.secrets, Guard: guard, Metrics: s.metrics,
+			Secrets: s.secrets, Guard: guard, Metrics: s.metrics, Tunnel: s.tunnel,
 			Logger: log.With("component", "api"), BaseURL: cfg.BaseURL,
 		})
 		if err := api.LoadTenantAdapters(ctx, apiSrv); err != nil {

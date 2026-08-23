@@ -37,6 +37,7 @@ func main() {
 		{"infer", "draft a declarative adapter from captured payloads", cmdInfer},
 		{"events", "search events and replay them", cmdEvents},
 		{"keys", "issue and revoke API keys", cmdKeys},
+		{"listen", "stream live events to a handler on your own machine", cmdListen},
 		{"simulate", "post a correctly-signed sample webhook at a receiver URL", cmdSimulate},
 		{"partitions", "provision monthly partitions and enforce retention; run daily", cmdPartitions},
 		{"usage", "export the billing metric in a form the customer can reconcile", cmdUsage},
@@ -85,6 +86,9 @@ Getting a first event flowing:
   statushubctl endpoints create --tenant acme --provider paystack --env live --secret-ref env://PAYSTACK_LIVE
   statushubctl destinations create --tenant acme --url https://acme.io/hooks/statushub --secret-ref env://ACME_SIGNING
   # paste the printed receiver URL into Paystack's dashboard, and you are done
+
+Developing against live webhooks without a public URL:
+  statushubctl listen --forward http://localhost:3000/hooks --key sh_test_...
 
 Proving it works before a real transaction exists:
   statushubctl simulate --provider paystack --event charge.success --url <receiver URL> --secret <secret>
