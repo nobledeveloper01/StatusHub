@@ -65,6 +65,10 @@ func New() *Registry {
 	r.histogram("statushub_delivery_duration_seconds", "Time for one delivery attempt, including the destination's response.",
 		[]float64{0.01, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30})
 
+	// The gauge for the failure nobody else catches: an endpoint that has
+	// gone quiet against its own learned baseline.
+	r.gauge("statushub_endpoint_silent", "1 when an endpoint is receiving far below its historical floor for this hour of the week.")
+	r.gauge("statushub_endpoint_silence_confidence", "Fraction of the week for which an endpoint has enough history to be judged.")
 	r.gauge("statushub_receiver_in_flight", "Requests the receiver is handling right now, against its explicit ceiling.")
 	r.gauge("statushub_delivery_queue_depth", "Deliveries not yet terminal, by shard.")
 	r.gauge("statushub_shard_oldest_pending_seconds", "Age of the oldest pending delivery in a shard. Head-of-line blocking shows up here first.")
