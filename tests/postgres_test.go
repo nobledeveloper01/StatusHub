@@ -3,6 +3,7 @@ package tests
 import (
 	"context"
 	"errors"
+	"net/netip"
 	"os"
 	"testing"
 	"time"
@@ -116,6 +117,11 @@ func TestPostgresTenantIsolation(t *testing.T) {
 		Provider: "paystack", Body: []byte(`{"data":{"reference":"TXN-PG"}}`),
 		BodySHA256: "hash", SignatureValid: true, ReceivedAt: time.Now().UTC(),
 		Headers: map[string]string{"user-agent": "Paystack/1.0"},
+		// A real source address. Without one, the inet column is never
+		// exercised — which is exactly how a scan bug reached a running
+		// server: every stored event had a nil address and the column was
+		// only ever read as NULL.
+		SourceIP: netip.MustParseAddr("102.89.34.7"),
 	}
 	mustNoErr(t, s.PutRawEvent(ctx, raw), "raw event")
 
@@ -147,6 +153,52 @@ func TestPostgresTenantIsolation(t *testing.T) {
 				t.Fatalf("tenant B read A's %s and got %v; must be ErrNotFound", name, err)
 			}
 		})
+	}
+}
+
+// TestPostgresReadsBackASourceAddress covers the column that a scan bug
+// reached a running server through: every test event had a nil address, so
+// the inet path was never read and pgx's refusal to scan it went unnoticed
+// until a real webhook arrived.
+func TestPostgresReadsBackASourceAddress(t *testing.T) {
+	s := pgStore(t)
+	ctx := context.Background()
+
+	ep := domain.Endpoint{
+		ID: domain.NewID(domain.PrefixEndpoint), TenantID: tenantA, Provider: "paystack",
+		Environment: domain.EnvLive, ReceiverToken: domain.NewToken(),
+		SecretRef: testSecretRef, AdapterName: "paystack", Enabled: true,
+	}
+	mustNoErr(t, s.CreateEndpoint(ctx, ep), "endpoint")
+
+	for _, addr := range []string{"102.89.34.7", "2606:4700:4700::1111"} {
+		raw := domain.RawEvent{
+			ID: domain.NewID(domain.PrefixRawEvent), TenantID: tenantA, EndpointID: ep.ID,
+			Provider: "paystack", Body: []byte(`{"data":{"reference":"TXN-IP"}}`),
+			BodySHA256: "h", SignatureValid: false, SignatureError: "forged",
+			SourceIP: netip.MustParseAddr(addr), ReceivedAt: time.Now().UTC(),
+		}
+		mustNoErr(t, s.PutRawEvent(ctx, raw), "storing an event from "+addr)
+
+		got, err := s.GetRawEvent(ctx, tenantA, raw.ID)
+		mustNoErr(t, err, "reading it back")
+		if got.SourceIP.String() != addr {
+			t.Errorf("source address round-tripped as %q, want %q", got.SourceIP, addr)
+		}
+	}
+
+	// And through the two paths that actually read it in production: the
+	// normaliser's work queue and the signature-failure view.
+	if _, err := s.ListUnnormalised(ctx, 10); err != nil {
+		t.Errorf("listing pending work with a stored source address: %v", err)
+	}
+	failures, err := s.ListSignatureFailures(ctx, tenantA, ep.ID, time.Time{}, 10)
+	mustNoErr(t, err, "listing signature failures")
+	if len(failures) != 2 {
+		t.Fatalf("%d failures listed, want 2", len(failures))
+	}
+	if !failures[0].SourceIP.IsValid() {
+		t.Error("the signature-failure view lost the source address, which is the first thing an operator looks at")
 	}
 }
 

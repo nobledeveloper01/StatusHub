@@ -14,6 +14,7 @@ import (
 	"github.com/nobledeveloper01/StatusHub/internal/secret"
 	"github.com/nobledeveloper01/StatusHub/internal/store"
 	"github.com/nobledeveloper01/StatusHub/internal/tunnel"
+	webembed "github.com/nobledeveloper01/StatusHub/web/embed"
 )
 
 // Server is the management API.
@@ -161,7 +162,33 @@ func (s *Server) Handler() http.Handler {
 	authed.HandleFunc("DELETE /v1/keys/{id}", requireRole(auth.RoleOwner, s.handleRevokeKey))
 
 	mux.Handle("/v1/", s.authenticate(authed))
+
+	// The dashboard is served from the same origin as the API, so the browser
+	// needs no CORS grant and the API needs no cross-origin allowance — which
+	// is one fewer thing to get subtly wrong on a management surface.
+	//
+	// It is served unauthenticated because it is static HTML and JavaScript
+	// containing nothing: every byte of data it displays comes from the
+	// authenticated routes above, and gating the assets would only mean a
+	// login page that cannot render.
+	mux.Handle("/", dashboardHandler())
+
 	return securityHeaders(s.recoverPanic(mux))
+}
+
+// dashboardHandler serves the embedded dashboard.
+func dashboardHandler() http.Handler {
+	files := http.FileServer(http.FS(webembed.FS()))
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// A same-origin-only content security policy. The dashboard loads no
+		// external anything on purpose: a fintech's webhook console should not
+		// tell a CDN when its operations team is looking at an incident, and
+		// should not stop working when that CDN does.
+		w.Header().Set("Content-Security-Policy",
+			"default-src 'self'; script-src 'self'; style-src 'self'; "+
+				"img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'")
+		files.ServeHTTP(w, r)
+	})
 }
 
 func (s *Server) handleSchemaVersions(w http.ResponseWriter, _ *http.Request) {

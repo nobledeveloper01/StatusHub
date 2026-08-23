@@ -41,6 +41,7 @@ func main() {
 		{"simulate", "post a correctly-signed sample webhook at a receiver URL", cmdSimulate},
 		{"partitions", "provision monthly partitions and enforce retention; run daily", cmdPartitions},
 		{"usage", "export the billing metric in a form the customer can reconcile", cmdUsage},
+		{"secrets", "generate the secrets a deployment needs, with what each one does", cmdSecrets},
 		{"doctor", "check the things that fail silently", cmdDoctor},
 		{"version", "print the version", cmdVersion},
 	}

@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>StatusHub</title>
+<!--
+  No external anything. The dashboard for a fintech's webhook infrastructure
+  should not make a request to a CDN on load: it is one more party who learns
+  when your operations team is looking at an incident, and one more thing that
+  can be unavailable at exactly the wrong moment.
+-->
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header>
+  <h1>StatusHub</h1>
+  <nav id="nav"></nav>
+  <div class="key">
+    <input id="apikey" type="password" placeholder="sh_live_… or sh_test_…" autocomplete="off" spellcheck="false">
+    <button id="connect">Connect</button>
+  </div>
+</header>
+
+<main>
+  <div id="banner" class="banner" hidden></div>
+  <section id="view"></section>
+</main>
+
+<footer>
+  <span id="status">not connected</span>
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>

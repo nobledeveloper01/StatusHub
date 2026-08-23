@@ -123,6 +123,11 @@ func cmdInit(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
+	// Stored, or the key printed below would not exist to the server — which
+	// is a confusing first five minutes for anybody following the quick start.
+	if err := store.NewPostgresKeys(s.Pool()).PutKey(ctx, key); err != nil {
+		return fmt.Errorf("storing the bootstrap key: %w", err)
+	}
 
 	fmt.Printf("tenant   %s (%s)\n", tenant.Slug, tenant.ID)
 	fmt.Printf("key id   %s\n", key.ID)
@@ -524,15 +529,15 @@ func cmdEvents(ctx context.Context, args []string) error {
 
 func cmdKeys(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("keys", flag.ExitOnError)
-	tenantID := fs.String("tenant-id", "", "tenant id")
+	slug := fs.String("tenant", "", "tenant slug")
 	role := fs.String("role", "engineer", "owner, engineer, support or read_only")
 	env := fs.String("env", "live", "test or live")
 	name := fs.String("name", "", "a label, for the dashboard")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	if *tenantID == "" {
-		return fmt.Errorf("--tenant-id is required")
+	if *slug == "" {
+		return fmt.Errorf("--tenant is required")
 	}
 	r := auth.Role(*role)
 	if !r.Valid() {
@@ -543,12 +548,27 @@ func cmdKeys(ctx context.Context, args []string) error {
 		return fmt.Errorf("--env must be test or live")
 	}
 
-	plaintext, key, err := auth.Issue(*tenantID, environment, r, *name, 0)
+	s, err := openStore(ctx)
 	if err != nil {
 		return err
 	}
+	defer func() { _ = s.Close() }()
+
+	tenant, err := s.GetTenantBySlug(ctx, *slug)
+	if err != nil {
+		return fmt.Errorf("tenant %q: %w", *slug, err)
+	}
+
+	plaintext, key, err := auth.Issue(tenant.ID, environment, r, *name, 0)
+	if err != nil {
+		return err
+	}
+	if err := store.NewPostgresKeys(s.Pool()).PutKey(ctx, key); err != nil {
+		return fmt.Errorf("storing the key: %w", err)
+	}
+
 	fmt.Printf("key id  %s\nkey     %s\n\n", key.ID, plaintext)
-	fmt.Println("Shown once. Store it now.")
+	fmt.Println("Shown once. It is stored as an Argon2id hash and cannot be recovered.")
 	return nil
 }
 

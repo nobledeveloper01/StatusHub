@@ -86,6 +86,13 @@ type Config struct {
 
 	SecretBackend string
 
+	// TenantSaltMaster is the base64 secret every tenant's pseudonymisation
+	// salt is derived from (§8.4). Without it, customer references cannot be
+	// hashed and are dropped rather than stored in the clear — which is the
+	// safe behaviour, and not one anybody should be running in production
+	// without knowing.
+	TenantSaltMaster string
+
 	// BlockedCIDRs are ranges destinations may never resolve to, beyond the
 	// universal private ones. A VPC range is publicly routable and still
 	// inside the perimeter.
@@ -167,6 +174,7 @@ func FromEnv() Config {
 	str("API_LISTEN_ADDR", &c.APIListenAddr)
 	str("BASE_URL", &c.BaseURL)
 	str("SECRET_BACKEND", &c.SecretBackend)
+	str("TENANT_SALT_MASTER", &c.TenantSaltMaster)
 	str("LOG_FORMAT", &c.LogFormat)
 	str("LOG_LEVEL", &c.LogLevel)
 	boolean("TRUST_PROXY_HEADERS", &c.TrustProxyHeaders)
@@ -229,6 +237,14 @@ func (c Config) Validate() error {
 		// Receiver URLs are pasted into providers' dashboards. A plaintext
 		// one would carry the token, and the payload, over the open internet.
 		return errors.New("BASE_URL must be https in the live environment")
+	}
+	if live && c.TenantSaltMaster == "" {
+		// Refused rather than warned. Running live without it means every
+		// customer reference is silently dropped, and the only symptom is a
+		// flag on a screen nobody has a reason to open.
+		return errors.New("STATUSHUB_TENANT_SALT_MASTER is required in the live environment: " +
+			"without it customer references cannot be pseudonymised and are dropped. " +
+			"Generate one with `statushubctl secrets generate`.")
 	}
 	if c.Shards <= 0 || c.Shards > 4096 {
 		return fmt.Errorf("shards must be between 1 and 4096, got %d", c.Shards)

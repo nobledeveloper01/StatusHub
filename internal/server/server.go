@@ -66,9 +66,22 @@ func New(ctx context.Context, cfg Config) (*Server, error) {
 	}
 	s.store = st
 
-	s.secrets = openSecrets(cfg)
-	s.keys = auth.NewMemoryKeyStore()
+	secrets, err := openSecrets(cfg)
+	if err != nil {
+		return nil, err
+	}
+	s.secrets = secrets
 	s.tunnel = tunnel.NewHub(tunnel.Options{})
+
+	// Keys are persisted wherever the events are. An in-memory key store
+	// means a key issued by the CLI does not exist to the server, and every
+	// key vanishes on restart — both discovered the first time somebody uses
+	// the thing end to end.
+	if pg, ok := st.(*store.Postgres); ok {
+		s.keys = store.NewPostgresKeys(pg.Pool())
+	} else {
+		s.keys = auth.NewMemoryKeyStore()
+	}
 
 	guard, err := dispatch.NewGuard(dispatch.GuardOptions{
 		BlockedCIDRs: cfg.BlockedCIDRs,
@@ -319,17 +332,30 @@ func openStore(ctx context.Context, cfg Config, log *slog.Logger) (store.Store, 
 	return pg, nil
 }
 
-func openSecrets(cfg Config) secret.Resolver {
-	env := secret.NewEnv()
-	static := secret.NewStatic()
-	multi := secret.NewMulti(map[string]secret.Resolver{
-		"env":    env,
-		"static": static,
-	})
+func openSecrets(cfg Config) (secret.Resolver, error) {
+	byScheme := map[string]secret.Resolver{
+		"env":    secret.NewEnv(),
+		"static": secret.NewStatic(),
+	}
+
+	// Per-tenant pseudonymisation salts are derived from one master rather
+	// than provisioned individually. Provisioning per tenant has a failure
+	// mode that is quiet and total: a tenant whose salt was never created has
+	// every customer reference silently dropped and every event flagged
+	// incomplete, with nothing erroring and nothing paging.
+	if cfg.TenantSaltMaster != "" {
+		ts, err := secret.NewTenantSalt(cfg.TenantSaltMaster)
+		if err != nil {
+			return nil, err
+		}
+		byScheme[secret.TenantSaltScheme] = ts
+	}
+
+	multi := secret.NewMulti(byScheme)
 	// Cached, because the receiver resolves a secret on every request and a
 	// secret-manager round trip per webhook would spend the whole 50 ms
 	// budget. Thirty seconds bounds how long a revoked secret stays usable.
-	return secret.NewCached(multi, 30*time.Second)
+	return secret.NewCached(multi, 30*time.Second), nil
 }
 
 func enqueuerOrNil(d *dispatch.Dispatcher) normalise.Enqueuer {

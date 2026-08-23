@@ -175,8 +175,12 @@ func (p *Postgres) PutRawEvent(ctx context.Context, e domain.RawEvent) error {
 	return mapError(err)
 }
 
+// source_ip is read through host() rather than as inet. pgx cannot scan the
+// binary inet representation into a string, and inet also carries a prefix
+// length that would have to be stripped afterwards — host() gives the bare
+// address, which is the only part we ever stored.
 const rawColumns = `id, tenant_id, endpoint_id, provider, headers, body, body_sha256,
-	source_ip, signature_valid, signature_error, redacted, redaction_note, received_at`
+	host(source_ip), signature_valid, signature_error, redacted, redaction_note, received_at`
 
 func (p *Postgres) GetRawEvent(ctx context.Context, tenantID, id string) (domain.RawEvent, error) {
 	row := p.pool.QueryRow(ctx,
@@ -258,14 +262,8 @@ func scanRawEvent(row scanner) (domain.RawEvent, error) {
 	if len(headers) > 0 {
 		_ = json.Unmarshal(headers, &e.Headers)
 	}
-	if ip != nil {
-		// Postgres renders inet with a prefix length for some values; the
-		// address half is what we stored and what we want back.
-		host, _, found := strings.Cut(*ip, "/")
-		if !found {
-			host = *ip
-		}
-		if a, perr := netip.ParseAddr(host); perr == nil {
+	if ip != nil && *ip != "" {
+		if a, perr := netip.ParseAddr(*ip); perr == nil {
 			e.SourceIP = a
 		}
 	}

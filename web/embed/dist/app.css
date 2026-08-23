@@ -1,0 +1,118 @@
+/*
+  Deliberately plain. This is read during incidents, on a laptop screen, by
+  somebody who is already stressed — so: high contrast, no animation, numbers
+  in a monospace face so columns line up, and nothing that moves while you are
+  trying to read it.
+*/
+:root {
+  --bg: #ffffff;
+  --fg: #16181d;
+  --muted: #5b6472;
+  --line: #dfe3e9;
+  --panel: #f7f8fa;
+  --accent: #1a56b8;
+  --ok: #12703a;
+  --warn: #8a5a00;
+  --bad: #a01b26;
+  --unknown: #6b3fa0;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #14161a; --fg: #e8eaed; --muted: #98a1ae; --line: #2b2f37;
+    --panel: #1b1e24; --accent: #6fa5ff; --ok: #4cc281; --warn: #e0a83c;
+    --bad: #ff7b85; --unknown: #b993f0;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  color: var(--fg);
+  background: var(--bg);
+}
+
+header {
+  display: flex; align-items: center; gap: 1.5rem;
+  padding: 0.75rem 1.25rem;
+  border-bottom: 1px solid var(--line);
+  flex-wrap: wrap;
+}
+header h1 { font-size: 1rem; margin: 0; letter-spacing: -0.01em; }
+
+nav { display: flex; gap: 0.25rem; flex: 1; flex-wrap: wrap; }
+nav button {
+  border: 0; background: none; color: var(--muted);
+  padding: 0.35rem 0.6rem; border-radius: 4px; cursor: pointer; font: inherit;
+}
+nav button:hover { background: var(--panel); color: var(--fg); }
+nav button[aria-current="page"] { background: var(--panel); color: var(--fg); font-weight: 600; }
+
+.key { display: flex; gap: 0.4rem; }
+.key input { width: 17rem; }
+
+input, select, button, textarea {
+  font: inherit; color: var(--fg); background: var(--bg);
+  border: 1px solid var(--line); border-radius: 4px; padding: 0.35rem 0.5rem;
+}
+button { cursor: pointer; background: var(--panel); }
+button:hover { border-color: var(--accent); }
+
+main { padding: 1.25rem; max-width: 1400px; }
+
+.banner {
+  padding: 0.6rem 0.85rem; border-radius: 4px; margin-bottom: 1rem;
+  border: 1px solid var(--line); background: var(--panel);
+}
+.banner.error { border-color: var(--bad); color: var(--bad); }
+
+h2 { font-size: 1rem; margin: 0 0 0.25rem; }
+.hint { color: var(--muted); margin: 0 0 1rem; max-width: 68ch; }
+
+.filters { display: flex; gap: 0.5rem; margin-bottom: 1rem; flex-wrap: wrap; }
+
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th, td {
+  text-align: left; padding: 0.45rem 0.6rem;
+  border-bottom: 1px solid var(--line); vertical-align: top;
+}
+th { color: var(--muted); font-weight: 600; white-space: nowrap; }
+tbody tr:hover { background: var(--panel); }
+td.num, td.mono, th.num { font-family: var(--mono); }
+td.num, th.num { text-align: right; white-space: nowrap; }
+
+/* Status carries meaning, so it is never colour alone — the word is always
+   there too, for anyone who cannot distinguish them. */
+.status { font-weight: 600; }
+.status.success { color: var(--ok); }
+.status.failed, .status.reversed { color: var(--bad); }
+.status.pending { color: var(--warn); }
+.status.unknown { color: var(--unknown); }
+.status.abandoned { color: var(--muted); }
+
+.flag {
+  display: inline-block; font-size: 11px; padding: 0.05rem 0.35rem;
+  border: 1px solid var(--warn); color: var(--warn); border-radius: 3px;
+  margin-left: 0.35rem; white-space: nowrap;
+}
+
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 0.75rem; margin-bottom: 1.5rem; }
+.card { border: 1px solid var(--line); border-radius: 6px; padding: 0.8rem; background: var(--panel); }
+.card .n { font-family: var(--mono); font-size: 1.6rem; line-height: 1.2; }
+.card .l { color: var(--muted); font-size: 12px; }
+
+pre {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 4px;
+  padding: 0.75rem; overflow-x: auto; font-family: var(--mono); font-size: 12px;
+  margin: 0 0 1rem;
+}
+
+.empty { color: var(--muted); padding: 2rem 0; }
+
+footer {
+  padding: 0.6rem 1.25rem; border-top: 1px solid var(--line);
+  color: var(--muted); font-size: 12px;
+}
