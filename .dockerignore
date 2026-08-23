@@ -1,0 +1,10 @@
+.git
+.github
+.gstack
+tests
+docs
+web/node_modules
+sdk/node/node_modules
+sdk/python/.venv
+*.md
+!migrations/README.md

@@ -1,0 +1,102 @@
+# The fastest way to see StatusHub work: `docker compose up`, then send a
+# signed webhook at the printed receiver URL.
+#
+# The receiver and the dispatcher run as separate services here even though
+# one process could do both, because that is the deployment shape §11.1
+# describes and an evaluation should exercise the real one. Restarting the
+# dispatcher while events are arriving is the demonstration worth doing: the
+# receiver keeps answering 200 and delivery catches up.
+
+name: statushub
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: statushub
+      POSTGRES_PASSWORD: statushub
+      POSTGRES_DB: statushub
+    ports: ["5432:5432"]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U statushub"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  migrate:
+    build:
+      context: .
+      args: { VERSION: compose }
+    entrypoint: ["/usr/local/bin/statushubctl", "migrate", "up"]
+    environment:
+      STATUSHUB_DATABASE_URL: postgres://statushub:statushub@postgres:5432/statushub?sslmode=disable
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: on-failure
+
+  receiver:
+    build:
+      context: .
+      args: { VERSION: compose }
+    command: ["serve", "--mode", "receiver"]
+    environment:
+      STATUSHUB_DATABASE_URL: postgres://statushub:statushub@postgres:5432/statushub?sslmode=disable
+      STATUSHUB_ENVIRONMENT: test
+      STATUSHUB_BASE_URL: http://localhost:8080
+      # The demo secrets. Real deployments resolve env:// references from a
+      # cloud secret manager; the database only ever holds the reference.
+      PAYSTACK_TEST: sk_test_demo_secret
+      ACME_SIGNING: whsec_demo_signing_secret
+    ports: ["8080:8080"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
+    read_only: true
+    security_opt: ["no-new-privileges:true"]
+    healthcheck:
+      # The receiver's readiness is "can I write a raw event" and nothing
+      # else, which is why a dispatcher fault never takes it out of rotation.
+      test: ["CMD", "/usr/local/bin/statushub", "--version"]
+      interval: 10s
+
+  dispatcher:
+    build:
+      context: .
+      args: { VERSION: compose }
+    command: ["serve", "--mode", "dispatcher"]
+    environment:
+      STATUSHUB_DATABASE_URL: postgres://statushub:statushub@postgres:5432/statushub?sslmode=disable
+      STATUSHUB_ENVIRONMENT: test
+      # Local sinks are on private addresses, which the SSRF guard refuses in
+      # any real deployment. Opened here, and refused outright when
+      # STATUSHUB_ENVIRONMENT is live.
+      STATUSHUB_ALLOW_PRIVATE_DESTINATIONS: "true"
+      ACME_SIGNING: whsec_demo_signing_secret
+    depends_on:
+      postgres: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
+    read_only: true
+    security_opt: ["no-new-privileges:true"]
+
+  api:
+    build:
+      context: .
+      args: { VERSION: compose }
+    command: ["serve", "--mode", "api", "--listen", ":8081"]
+    environment:
+      STATUSHUB_DATABASE_URL: postgres://statushub:statushub@postgres:5432/statushub?sslmode=disable
+      STATUSHUB_ENVIRONMENT: test
+      STATUSHUB_BASE_URL: http://localhost:8080
+      PAYSTACK_TEST: sk_test_demo_secret
+      ACME_SIGNING: whsec_demo_signing_secret
+    ports: ["8081:8081"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
+    read_only: true
+    security_opt: ["no-new-privileges:true"]
+
+volumes:
+  pgdata:
