@@ -14,6 +14,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/nobledeveloper01/StatusHub/internal/region"
 )
 
 // Mode is which workload this process runs.
@@ -72,6 +74,19 @@ type Config struct {
 
 	Environment string
 
+	// Region and RegionRole place this process in a multi-region deployment
+	// (ADR-006). Receivers run in every region; the dispatcher, normaliser
+	// and API run in exactly one, because ordering is enforced by a database
+	// claim that only serialises against claimants reading the same rows.
+	Region     string
+	RegionRole string
+
+	// DBWriteBudget is how long the receiver's INSERT may take before the
+	// latency alert fires. Larger in an edge region, where the write crosses
+	// the network — but still bounded, because exceeding it means providers
+	// are about to start retrying.
+	DBWriteBudget time.Duration
+
 	ListenAddr    string
 	APIListenAddr string
 
@@ -122,8 +137,11 @@ type Config struct {
 // Defaults returns a usable configuration for local evaluation.
 func Defaults() Config {
 	return Config{
-		Mode:              ModeAll,
-		StoreKind:         "postgres",
+		Mode:      ModeAll,
+		StoreKind: "postgres",
+		// Single-region until told otherwise. A deployment that has never
+		// thought about regions should not have to configure one.
+		RegionRole:        string(region.Primary),
 		Environment:       "test",
 		ListenAddr:        ":8080",
 		APIListenAddr:     ":8081",
@@ -177,6 +195,8 @@ func FromEnv() Config {
 	str("DATABASE_URL", &c.DatabaseURL)
 	str("STORE", &c.StoreKind)
 	str("ENVIRONMENT", &c.Environment)
+	str("REGION", &c.Region)
+	str("REGION_ROLE", &c.RegionRole)
 	str("LISTEN_ADDR", &c.ListenAddr)
 	str("API_LISTEN_ADDR", &c.APIListenAddr)
 	str("BASE_URL", &c.BaseURL)
@@ -190,6 +210,7 @@ func FromEnv() Config {
 	dur("DISPATCH_INTERVAL", &c.DispatchInterval)
 	dur("DELIVERY_LEASE", &c.DeliveryLease)
 	dur("SHUTDOWN_GRACE", &c.ShutdownGrace)
+	dur("DB_WRITE_BUDGET", &c.DBWriteBudget)
 
 	for name, dst := range map[string]*float64{
 		"RECEIVE_PER_SECOND": &c.ReceivePerSecond,
@@ -215,6 +236,21 @@ func FromEnv() Config {
 		}
 	}
 	return c
+}
+
+// RegionConfig is where this process sits in a multi-region deployment.
+func (c Config) RegionConfig() region.Config {
+	name := c.Region
+	if name == "" {
+		// A single-region deployment still needs a label, or its metrics are
+		// unattributable the day a second region appears.
+		name = "default"
+	}
+	return region.Config{
+		Name:        name,
+		Role:        region.Role(c.RegionRole),
+		WriteBudget: c.DBWriteBudget,
+	}
 }
 
 // Validate refuses a configuration that would be unsafe or unusable.
@@ -264,6 +300,21 @@ func (c Config) Validate() error {
 			"without it customer references cannot be pseudonymised and are dropped. " +
 			"generate one with `statushubctl secrets --for tenant-salt`")
 	}
+	// A dispatcher outside the primary region is the failure that does not
+	// announce itself: it works, claims its own rows, and delivers events the
+	// primary also delivered — out of order, with nothing erroring.
+	rc := c.RegionConfig()
+	if c.Region != "" {
+		if err := rc.Validate(); err != nil {
+			return err
+		}
+	}
+	if c.Mode.RunsDispatcher() {
+		if err := region.GuardDispatcher(rc); err != nil {
+			return err
+		}
+	}
+
 	if c.Shards <= 0 || c.Shards > 4096 {
 		return fmt.Errorf("shards must be between 1 and 4096, got %d", c.Shards)
 	}

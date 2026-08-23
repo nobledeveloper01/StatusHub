@@ -56,8 +56,15 @@ func New(ctx context.Context, cfg Config) (*Server, error) {
 	log := newLogger(cfg)
 	s := &Server{cfg: cfg, log: log, metrics: metrics.New(), registry: adapters.New()}
 
+	// Every log line carries the region, so a line pasted into an incident
+	// channel says where it came from without anybody having to ask.
+	rc := cfg.RegionConfig()
+	log = log.With("region", rc.Name, "region_role", rc.Role.String())
+	s.log = log
+
 	s.metrics.Set("statushub_build_info", metrics.Labels{
 		"version": Version, "commit": Commit, "mode": cfg.Mode.String(),
+		"region": rc.Name, "role": rc.Role.String(),
 	}, 1)
 
 	st, err := openStore(ctx, cfg, log)
@@ -131,6 +138,8 @@ func New(ctx context.Context, cfg Config) (*Server, error) {
 			TrustProxyHeaders:  cfg.TrustProxyHeaders,
 			PerTenantPerSecond: cfg.ReceivePerSecond,
 			Burst:              cfg.ReceiveBurst,
+			Region:             cfg.RegionConfig().Name,
+			WriteBudget:        cfg.RegionConfig().Budget(),
 		})
 		s.receiverHTTP = &http.Server{
 			Addr:    cfg.ListenAddr,

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/nobledeveloper01/StatusHub/internal/migrate"
+	"github.com/nobledeveloper01/StatusHub/internal/region"
 	"github.com/nobledeveloper01/StatusHub/internal/secret"
 )
 
@@ -24,6 +25,8 @@ import (
 // operator nothing.
 func cmdDoctor(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("doctor", flag.ExitOnError)
+	replication := fs.Bool("replication", false,
+		"report replica lag — run this against the replica before promoting it, never after")
 	secretRefs := multiFlag{}
 	fs.Var(&secretRefs, "secret-ref", "a secret reference to resolve; repeat for several")
 	egress := fs.String("egress", "https://api.paystack.co", "a URL to prove outbound HTTPS works")
@@ -74,6 +77,29 @@ func cmdDoctor(ctx context.Context, args []string) error {
 		}
 		return "up to date", nil
 	})
+
+	if *replication {
+		// Deliberately its own flag rather than part of the default run. On a
+		// primary it reports "this is the primary", which is noise every
+		// other day and the single most useful line on the day somebody is
+		// about to promote the wrong host.
+		check("replication", func() (string, error) {
+			pool, err := openPool(ctx)
+			if err != nil {
+				return "", err
+			}
+			defer pool.Close()
+
+			state, err := region.CheckReplica(ctx, pool)
+			if err != nil {
+				return "", err
+			}
+			// The assessment, not the number. "4s behind" is a measurement;
+			// "promoting now loses every event in that window, and the
+			// provider will not resend" is a decision.
+			return state.Assessment(), nil
+		})
+	}
 
 	check("clock skew", func() (string, error) {
 		offset, err := clockOffset(ctx)

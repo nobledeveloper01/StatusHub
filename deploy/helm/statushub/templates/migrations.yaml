@@ -1,4 +1,10 @@
-{{- if .Values.migrations.enabled }}
+{{- if and .Values.migrations.enabled (eq (include "statushub.isPrimary" .) "true") }}
+{{/*
+Primary only. An edge region migrating the shared database during its own
+rollout would apply a schema change the primary's running binaries have not
+been rolled onto — which is the ordering §11.8 exists to prevent, arrived at
+from an unexpected direction.
+*/}}
 {{/*
 Migrations run before the new binaries roll out.
 

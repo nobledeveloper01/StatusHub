@@ -1,3 +1,11 @@
+{{- if eq (include "statushub.isPrimary" .) "true" -}}
+{{/*
+Rendered only in the primary region.
+
+The event explorer reads the primary, never a replica: a dashboard showing an
+event as undelivered because it read a lagging replica would send an operator
+to replay something already delivered.
+*/}}
 {{/*
 The management API and dashboard.
 
@@ -73,3 +81,5 @@ spec:
     app.kubernetes.io/name: {{ include "statushub.name" . }}
     app.kubernetes.io/instance: {{ .Release.Name }}
     app.kubernetes.io/component: api
+
+{{- end }}

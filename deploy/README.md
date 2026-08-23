@@ -111,6 +111,43 @@ subject's events. Terraform must not do that as a side effect of a provider
 upgrade regenerating a random value. See
 [ADR-004](../docs/adr/0004-derive-tenant-salts-from-one-master.md).
 
+## Multi-region
+
+Receivers in every region; the dispatcher, normaliser and API in exactly one
+([ADR-006](../docs/adr/0006-multi-region.md)).
+
+```bash
+# The primary: everything.
+helm install statushub deploy/helm/statushub \
+  --set region.name=us-east-1 --set region.role=primary \
+  --set config.baseURL=https://hooks.example.com
+
+# An edge region: receivers only, writing to the primary's database.
+helm install statushub deploy/helm/statushub \
+  --set region.name=af-south-1 --set region.role=edge \
+  --set config.baseURL=https://hooks-af.example.com
+```
+
+An edge release does not render a dispatcher **at all** — not scaled to zero,
+absent. A Deployment with `replicas: 0` is one `kubectl scale` away from being
+the second dispatcher that silently breaks ordering, and the person who runs
+that command will be under pressure and looking for capacity.
+
+The server refuses to start a dispatcher in an edge region for the same
+reason, which is the belt to the chart's braces. Ordering is enforced by a
+database claim, and a claim only serialises against claimants reading the same
+rows — a second dispatching region delivers the same events twice, out of
+order, and nothing errors while it happens.
+
+**Failover is a human decision.** See
+[the runbook](../docs/runbook-failover.md). An automated promotion on a
+network partition produces two primaries, and a false-positive failover is
+worse than the outage it responds to.
+
+```bash
+statushubctl doctor --replication   # run against the replica, before promoting
+```
+
 ## The partition job is not optional
 
 `raw_events` is partitioned monthly and nothing else creates the partitions.

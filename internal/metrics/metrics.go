@@ -60,6 +60,12 @@ func New() *Registry {
 	// entire distribution in one bucket and measure nothing that matters.
 	r.histogram("statushub_receive_duration_seconds", "Time from request arrival to the 200 being written.",
 		[]float64{0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5})
+	// Separated from the total, because in an edge region the write is the
+	// cross-region hop and everything else is not. One histogram covering
+	// both would make a network problem look like a code problem.
+	r.histogram("statushub_store_write_duration_seconds", "Time for the receiver's single durable write.",
+		[]float64{0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.15, 0.25, 0.5, 1})
+	r.counter("statushub_store_write_over_budget_total", "Durable writes that exceeded the region's write budget. Providers are about to start retrying.")
 	r.histogram("statushub_normalisation_duration_seconds", "Time to map a raw event onto the canonical schema.",
 		[]float64{0.0005, 0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1})
 	r.histogram("statushub_delivery_duration_seconds", "Time for one delivery attempt, including the destination's response.",
@@ -73,7 +79,8 @@ func New() *Registry {
 	r.gauge("statushub_delivery_queue_depth", "Deliveries not yet terminal, by shard.")
 	r.gauge("statushub_shard_oldest_pending_seconds", "Age of the oldest pending delivery in a shard. Head-of-line blocking shows up here first.")
 	r.gauge("statushub_destination_breaker_open", "1 when a destination's circuit breaker is not closed. Deliveries to it are parked, not failing.")
-	r.gauge("statushub_build_info", "Always 1. Labels carry the version and commit.")
+	r.gauge("statushub_build_info", "Always 1. Labels carry the version, commit and region.")
+	r.gauge("statushub_replica_lag_seconds", "How far a replica is behind the primary. Read before promoting, never after.")
 	r.gauge("statushub_audit_chain_intact", "1 when the nightly walk of a tenant's audit chain verified, 0 when it did not.")
 
 	return r

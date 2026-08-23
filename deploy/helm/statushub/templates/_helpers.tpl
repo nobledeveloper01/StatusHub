@@ -29,7 +29,22 @@ Secrets arrive as references into an existing Kubernetes Secret rather than
 templated into the release: a value in a Helm release is a value in the
 cluster's release history, readable by anybody with `helm get values`.
 */}}
+{{/*
+Whether this release runs the workloads that must exist in exactly one region.
+*/}}
+{{- define "statushub.isPrimary" -}}
+{{- eq (default "primary" .Values.region.role) "primary" -}}
+{{- end -}}
+
 {{- define "statushub.env" -}}
+- name: STATUSHUB_REGION
+  value: {{ default "default" .Values.region.name | quote }}
+- name: STATUSHUB_REGION_ROLE
+  value: {{ default "primary" .Values.region.role | quote }}
+{{- with .Values.region.writeBudget }}
+- name: STATUSHUB_DB_WRITE_BUDGET
+  value: {{ . | quote }}
+{{- end }}
 - name: STATUSHUB_ENVIRONMENT
   value: {{ .Values.config.environment | quote }}
 - name: STATUSHUB_BASE_URL

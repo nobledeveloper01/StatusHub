@@ -70,6 +70,13 @@ type Receiver struct {
 	// now is injectable so the timestamp-window tests do not have to sleep.
 	now func() time.Time
 
+	// region labels every metric this receiver emits, so a regional problem
+	// is visible as one rather than as a global degradation nobody can
+	// locate. writeBudget is the ceiling for the single durable write, which
+	// is larger in an edge region because it crosses the network.
+	region      string
+	writeBudget time.Duration
+
 	// limiter is per-tenant backpressure (§8.6). Its ceiling is deliberately
 	// far above any legitimate volume: a refused webhook is an event lost,
 	// because the provider may exhaust its retries against our 429. It exists
@@ -107,6 +114,11 @@ type Options struct {
 
 	// MaxInFlight bounds concurrent request handling.
 	MaxInFlight int
+
+	// Region and WriteBudget place this receiver in a multi-region
+	// deployment (ADR-006).
+	Region      string
+	WriteBudget time.Duration
 }
 
 // New builds a Receiver.
@@ -120,6 +132,14 @@ func New(o Options) *Receiver {
 		notify:            o.Notifier,
 		trustProxyHeaders: o.TrustProxyHeaders,
 		now:               o.Now,
+		region:            o.Region,
+		writeBudget:       o.WriteBudget,
+	}
+	if r.region == "" {
+		r.region = "default"
+	}
+	if r.writeBudget <= 0 {
+		r.writeBudget = 25 * time.Millisecond
 	}
 	// The default matches the service's own load target: §11.9 specifies
 	// 10,000 webhooks/sec, so a per-tenant ceiling below that would throttle
@@ -317,7 +337,21 @@ func (r *Receiver) handleWebhook(w http.ResponseWriter, req *http.Request) {
 		raw.SignatureValid = true
 	}
 
-	if err := r.store.PutRawEvent(ctx, raw); err != nil {
+	writeStart := r.now()
+	err = r.store.PutRawEvent(ctx, raw)
+	writeTook := r.now().Sub(writeStart)
+
+	// Measured separately from the total. In an edge region this is the
+	// cross-region hop and everything else is not, so one histogram covering
+	// both would make a network problem look like a code problem.
+	r.metrics.Observe("statushub_store_write_duration_seconds",
+		metrics.Labels{"region": r.region}, writeTook)
+	if writeTook > r.writeBudget {
+		r.metrics.Inc("statushub_store_write_over_budget_total",
+			metrics.Labels{"region": r.region, "provider": endpoint.Provider})
+	}
+
+	if err != nil {
 		// The one failure worth a 500. The provider will retry, which is
 		// exactly what we want: better a duplicate we can dedupe than an
 		// event nobody has a record of.
@@ -330,6 +364,7 @@ func (r *Receiver) handleWebhook(w http.ResponseWriter, req *http.Request) {
 	r.metrics.Inc("statushub_webhooks_received_total", metrics.Labels{
 		"provider":        endpoint.Provider,
 		"tenant":          tenant.ID,
+		"region":          r.region,
 		"signature_valid": fmt.Sprintf("%t", raw.SignatureValid),
 	})
 
@@ -391,7 +426,7 @@ func (r *Receiver) handleWebhook(w http.ResponseWriter, req *http.Request) {
 
 func (r *Receiver) observeDuration(start time.Time, provider string) {
 	r.metrics.Observe("statushub_receive_duration_seconds",
-		metrics.Labels{"provider": provider}, r.now().Sub(start))
+		metrics.Labels{"provider": provider, "region": r.region}, r.now().Sub(start))
 }
 
 // verify runs the endpoint's adapter against the request, trying every

@@ -12,6 +12,25 @@ image:
   pullPolicy: IfNotPresent
   pullSecrets: []
 
+# Where this release sits in a multi-region deployment (ADR-006).
+#
+# Receivers run in every region; the dispatcher, normaliser and API run in
+# exactly one. That is not a preference — ordering is enforced by a database
+# claim, and a claim only serialises against claimants reading the same rows.
+# A second dispatching region delivers the same events twice, out of order,
+# and nothing errors while it happens.
+#
+# An edge release sets role: edge, which makes the chart refuse to render a
+# dispatcher at all.
+region:
+  name: ""            # eu-west-1, af-south-1 — labels every metric and log line
+  role: primary       # primary | edge
+
+  # How long the receiver's single durable write may take before the latency
+  # alert fires. Empty uses the role's default: 25ms for a primary, 120ms for
+  # an edge region whose write crosses the network.
+  writeBudget: ""
+
 # Everything the two workloads share. Secrets are references, never values —
 # the database only ever holds a reference, and so does this file.
 config:

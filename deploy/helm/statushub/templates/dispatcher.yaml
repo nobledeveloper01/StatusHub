@@ -1,3 +1,12 @@
+{{- if eq (include "statushub.isPrimary" .) "true" -}}
+{{/*
+Rendered only in the primary region (ADR-006).
+
+Not merely scaled to zero: absent. A Deployment with replicas: 0 in an edge
+region is one `kubectl scale` away from being the second dispatcher that
+silently breaks ordering, and the person who runs that command will be
+under pressure and looking for capacity.
+*/}}
 {{/*
 The dispatcher.
 
@@ -78,3 +87,5 @@ spec:
       {{- with .Values.affinity }}
       affinity: {{ toYaml . | nindent 8 }}
       {{- end }}
+
+{{- end }}
