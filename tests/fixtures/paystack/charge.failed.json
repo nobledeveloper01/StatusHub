@@ -1,0 +1,14 @@
+{
+  "event": "charge.failed",
+  "data": {
+    "id": 4123870999,
+    "status": "failed",
+    "reference": "TXN-2026-08-11-8843",
+    "amount": 250000,
+    "gateway_response": "Insufficient funds",
+    "created_at": "2026-08-11T10:02:03.000Z",
+    "channel": "card",
+    "currency": "NGN",
+    "customer": { "email": "ngozi@example.com", "customer_code": "CUS_77aa" }
+  }
+}
