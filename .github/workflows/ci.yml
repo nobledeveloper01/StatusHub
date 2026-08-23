@@ -72,6 +72,13 @@ jobs:
       - name: Adapter corpus and signature vectors
         run: go test -race ./tests/... -run 'Adapter' -v
 
+      # Chaos (§11.9): kill a dispatcher mid-delivery and assert nothing is
+      # lost and nothing arrives that the customer cannot deduplicate; kill a
+      # receiver between persist and acknowledge and assert the provider's
+      # retry produces one canonical event, not four.
+      - name: Chaos
+        run: go test -race ./tests/... -run 'Chaos' -v
+
       # The specification is generated from the routes. Regenerating it here
       # means a route added without regenerating fails CI rather than shipping
       # a document that promises endpoints nobody serves.

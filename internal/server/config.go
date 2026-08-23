@@ -84,6 +84,13 @@ type Config struct {
 
 	TrustProxyHeaders bool
 
+	// ReceivePerSecond and ReceiveBurst are the per-tenant backpressure
+	// ceiling. Zero means the defaults, which match the service's own load
+	// target — a deployment with many small tenants may want them lower, and
+	// one carrying a single very large tenant may want them higher.
+	ReceivePerSecond float64
+	ReceiveBurst     float64
+
 	SecretBackend string
 
 	// TenantSaltMaster is the base64 secret every tenant's pseudonymisation
@@ -183,6 +190,17 @@ func FromEnv() Config {
 	dur("DISPATCH_INTERVAL", &c.DispatchInterval)
 	dur("DELIVERY_LEASE", &c.DeliveryLease)
 	dur("SHUTDOWN_GRACE", &c.ShutdownGrace)
+
+	for name, dst := range map[string]*float64{
+		"RECEIVE_PER_SECOND": &c.ReceivePerSecond,
+		"RECEIVE_BURST":      &c.ReceiveBurst,
+	} {
+		if v := os.Getenv("STATUSHUB_" + name); v != "" {
+			if f, err := strconv.ParseFloat(v, 64); err == nil && f > 0 {
+				*dst = f
+			}
+		}
+	}
 
 	if v := os.Getenv("STATUSHUB_SHARDS"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {

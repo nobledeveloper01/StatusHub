@@ -92,6 +92,14 @@ test-sdks: ## The Node and Python client libraries, against the Go-signed fixtur
 	cd sdk/node && npm install --silent && npm run build && node --test test/*.test.js
 	cd sdk/python && python3 -m pytest tests/ -q
 
+loadtest: ## k6 at the §11.9 profile: 10k/sec across six providers, p99 under 50ms
+	@command -v k6 >/dev/null 2>&1 || { echo "k6 is not installed: brew install k6"; exit 1; }
+	@test -n "$$ENDPOINTS" || { echo "ENDPOINTS is required, as provider=token:secret pairs"; exit 1; }
+	k6 run loadtest/receive.js -e BASE_URL=$${BASE_URL:-http://localhost:8080} -e TENANT=$${TENANT:-acme} -e ENDPOINTS="$$ENDPOINTS"
+
+test-chaos: db-setup ## Kill components mid-flight and assert nothing is lost or duplicated (§11.9)
+	STATUSHUB_TEST_DATABASE_URL="$(TEST_DB_URL)" go test -race -count=1 ./tests/ -run Chaos -v
+
 openapi: ## Regenerate docs/openapi.yaml from the routes
 	go run ./cmd/statushubctl openapi --version $$(grep -m1 "version:" docs/openapi.yaml | tr -d " version:\"") --out docs/openapi.yaml
 

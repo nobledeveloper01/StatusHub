@@ -126,9 +126,11 @@ func New(ctx context.Context, cfg Config) (*Server, error) {
 	if cfg.Mode.RunsReceiver() {
 		r := receive.New(receive.Options{
 			Store: s.store, Registry: s.registry, Secrets: s.secrets, Metrics: s.metrics,
-			Logger:            log.With("component", "receiver"),
-			Notifier:          notifierOrNil(s.normWorker),
-			TrustProxyHeaders: cfg.TrustProxyHeaders,
+			Logger:             log.With("component", "receiver"),
+			Notifier:           notifierOrNil(s.normWorker),
+			TrustProxyHeaders:  cfg.TrustProxyHeaders,
+			PerTenantPerSecond: cfg.ReceivePerSecond,
+			Burst:              cfg.ReceiveBurst,
 		})
 		s.receiverHTTP = &http.Server{
 			Addr:    cfg.ListenAddr,

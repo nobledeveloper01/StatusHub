@@ -761,6 +761,8 @@ make test              # unit tests with the race detector, no database needed
 make test-integration  # the full suite, against a real Postgres
 make test-isolation    # the tenant isolation gate on its own
 make test-adapters     # every adapter against its captured payloads
+make test-chaos        # kill components mid-flight; assert nothing is lost
+make loadtest          # k6 against a running receiver
 make ci                # what CI runs
 ```
 
@@ -777,6 +779,8 @@ the integration path is never skipped where it matters.
 | Isolation | Two tenants, every read path, 404 rather than 403. Blocking gate. |
 | Ordering | Concurrent events sharing a `transaction_ref` must reach the sink in order. |
 | Failure | Sink returns 500 → assert the schedule. Sink flaps → assert eventual delivery. Dispatcher dies mid-delivery → assert the lease is reclaimed. |
+| Chaos | A dispatcher killed mid-delivery: nothing lost, and every redelivery carries a stable idempotency key. A receiver killed between persist and acknowledge: four provider retries produce one canonical event. The dispatcher entirely absent: the receiver stays ready and keeps accepting. |
+| Load | k6 at the §11.9 profile, with the 50 ms p99 encoded as a threshold so the run fails when the SLO is missed. |
 | End to end | A signed provider webhook in, one canonical shape out, audit trail complete. |
 
 Tests live in `tests/` rather than beside each package, so they exercise only

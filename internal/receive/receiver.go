@@ -121,16 +121,25 @@ func New(o Options) *Receiver {
 		trustProxyHeaders: o.TrustProxyHeaders,
 		now:               o.Now,
 	}
-	// 2,000/sec sustained with a 10,000 burst per tenant. The §11.9 load
-	// target is 10,000/sec across six providers for the whole service, so one
-	// tenant's ceiling sits well above anything real while still bounding the
-	// damage a runaway integration can do to its neighbours.
+	// The default matches the service's own load target: §11.9 specifies
+	// 10,000 webhooks/sec, so a per-tenant ceiling below that would throttle
+	// a single large tenant at a rate the service is specced to carry.
+	//
+	// An earlier default of 2,000/sec did exactly that, and the load test
+	// found it — a tenant sending what the product promises to handle was
+	// answered with 429s. The ceiling exists to stop one tenant taking the
+	// service down for its neighbours, and at 10,000/sec the service is at
+	// its stated capacity anyway, so that is the right place for it.
+	//
+	// The burst is double, because providers deliver in bursts after their
+	// own outages and a bucket that cannot absorb one turns a provider's
+	// recovery into our refusal.
 	perSecond, burst := o.PerTenantPerSecond, o.Burst
 	if perSecond <= 0 {
-		perSecond = 2000
+		perSecond = 10000
 	}
 	if burst <= 0 {
-		burst = 10000
+		burst = 20000
 	}
 	r.limiter = ratelimit.New(ratelimit.Options{PerSecond: perSecond, Burst: burst, Now: o.Now})
 
