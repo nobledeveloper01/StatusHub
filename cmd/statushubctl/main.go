@@ -36,6 +36,7 @@ func main() {
 		{"adapters", "list built-in adapters and test declarative ones", cmdAdapters},
 		{"events", "search events and replay them", cmdEvents},
 		{"keys", "issue and revoke API keys", cmdKeys},
+		{"simulate", "post a correctly-signed sample webhook at a receiver URL", cmdSimulate},
 		{"doctor", "check the things that fail silently", cmdDoctor},
 		{"version", "print the version", cmdVersion},
 	}
@@ -81,6 +82,9 @@ Getting a first event flowing:
   statushubctl endpoints create --tenant acme --provider paystack --env live --secret-ref env://PAYSTACK_LIVE
   statushubctl destinations create --tenant acme --url https://acme.io/hooks/statushub --secret-ref env://ACME_SIGNING
   # paste the printed receiver URL into Paystack's dashboard, and you are done
+
+Proving it works before a real transaction exists:
+  statushubctl simulate --provider paystack --event charge.success --url <receiver URL> --secret <secret>
 
 When a provider changes their payload (runbook 11.5):
   statushubctl events list --tenant acme --provider paystack --mapping-complete=false

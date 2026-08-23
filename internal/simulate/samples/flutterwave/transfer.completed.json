@@ -1,0 +1,21 @@
+{
+  "event": "transfer.completed",
+  "data": {
+    "id": 8829301,
+    "account_number": "0001234567",
+    "bank_name": "GTBANK PLC",
+    "bank_code": "058",
+    "fullname": "Ibrahim Musa",
+    "created_at": "2026-08-11T11:00:00.000Z",
+    "currency": "NGN",
+    "debit_currency": "NGN",
+    "amount": 125000,
+    "fee": 26.875,
+    "status": "SUCCESSFUL",
+    "reference": "PAYOUT-2026-08-11-001",
+    "narration": "August payout",
+    "complete_message": "Successful",
+    "requires_approval": 0,
+    "is_approved": 1
+  }
+}

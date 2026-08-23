@@ -1,0 +1,20 @@
+{
+  "id": "evt_1QhX9zA1B2C3D4E5F6G7H8I9",
+  "object": "event",
+  "created": 1786598000,
+  "type": "charge.refunded",
+  "data": {
+    "object": {
+      "id": "ch_3QhX2mA1B2C3D4E5",
+      "object": "charge",
+      "amount": 5000000,
+      "amount_refunded": 5000000,
+      "currency": "ngn",
+      "status": "succeeded",
+      "refunded": true,
+      "created": 1786511662,
+      "payment_intent": "pi_3QhX2mA1B2C3D4E5",
+      "receipt_email": "tunde@example.com"
+    }
+  }
+}

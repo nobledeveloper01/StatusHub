@@ -1,0 +1,9 @@
+{
+  "sessionId": "999240260811091600000011112222",
+  "paymentReference": "TXN-2026-08-11-8860",
+  "amount": "100.00",
+  "responseCode": "K7",
+  "currency": "NGN",
+  "transactionDateTime": "2026-08-11 09:16:00",
+  "narration": "Transfer"
+}

@@ -1,0 +1,15 @@
+{
+  "sessionId": "999240260811091431000012345678",
+  "paymentReference": "TXN-2026-08-11-8842",
+  "amount": "50000.00",
+  "responseCode": "00",
+  "currency": "NGN",
+  "transactionDateTime": "2026-08-11 09:14:31",
+  "originatorAccountName": "TUNDE ADEBAYO",
+  "originatorAccountNumber": "0001234567",
+  "originatorBankCode": "058",
+  "beneficiaryAccountName": "ACME PAYMENTS LTD",
+  "beneficiaryAccountNumber": "1029384756",
+  "narration": "Payment for order ORD-99312",
+  "channelCode": "2"
+}

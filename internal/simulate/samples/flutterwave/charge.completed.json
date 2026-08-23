@@ -1,0 +1,37 @@
+{
+  "event": "charge.completed",
+  "data": {
+    "id": 4589301,
+    "tx_ref": "TXN-2026-08-11-8842",
+    "flw_ref": "FLW-MOCK-9f2a7c1x8842",
+    "device_fingerprint": "62wd23423rq334International",
+    "amount": 8134.55,
+    "currency": "NGN",
+    "charged_amount": 8134.55,
+    "app_fee": 113.88,
+    "merchant_fee": 0,
+    "processor_response": "Approved by Financial Institution",
+    "auth_model": "PIN",
+    "ip": "197.210.64.12",
+    "narration": "Acme Payments",
+    "status": "successful",
+    "payment_type": "card",
+    "created_at": "2026-08-11T09:14:31.000Z",
+    "account_id": 74271,
+    "customer": {
+      "id": 1929102,
+      "name": "Ngozi Eze",
+      "phone_number": "08030000001",
+      "email": "ngozi@example.com",
+      "created_at": "2025-01-04T10:00:00.000Z"
+    },
+    "card": {
+      "first_6digits": "553188",
+      "last_4digits": "2950",
+      "issuer": "MASTERCARD  GUARANTY TRUST BANK  DEBIT",
+      "country": "NIGERIA NG",
+      "type": "MASTERCARD",
+      "expiry": "09/32"
+    }
+  }
+}
