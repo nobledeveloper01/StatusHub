@@ -37,6 +37,7 @@ func main() {
 		{"events", "search events and replay them", cmdEvents},
 		{"keys", "issue and revoke API keys", cmdKeys},
 		{"simulate", "post a correctly-signed sample webhook at a receiver URL", cmdSimulate},
+		{"partitions", "provision monthly partitions and enforce retention; run daily", cmdPartitions},
 		{"doctor", "check the things that fail silently", cmdDoctor},
 		{"version", "print the version", cmdVersion},
 	}
