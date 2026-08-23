@@ -38,12 +38,13 @@ func main() {
 		{"keys", "issue and revoke API keys", cmdKeys},
 		{"simulate", "post a correctly-signed sample webhook at a receiver URL", cmdSimulate},
 		{"partitions", "provision monthly partitions and enforce retention; run daily", cmdPartitions},
+		{"usage", "export the billing metric in a form the customer can reconcile", cmdUsage},
 		{"doctor", "check the things that fail silently", cmdDoctor},
 		{"version", "print the version", cmdVersion},
 	}
 
 	if len(os.Args) < 2 {
-		usage(commands)
+		printUsage(commands)
 		os.Exit(2)
 	}
 
@@ -59,11 +60,11 @@ func main() {
 	}
 
 	fmt.Fprintf(os.Stderr, "statushubctl: unknown command %q\n\n", name)
-	usage(commands)
+	printUsage(commands)
 	os.Exit(2)
 }
 
-func usage(commands []command) {
+func printUsage(commands []command) {
 	fmt.Fprintf(os.Stderr, `statushubctl %s — administer a StatusHub deployment.
 
 Usage:
