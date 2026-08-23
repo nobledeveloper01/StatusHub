@@ -65,6 +65,7 @@ func New() *Registry {
 	r.histogram("statushub_delivery_duration_seconds", "Time for one delivery attempt, including the destination's response.",
 		[]float64{0.01, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30})
 
+	r.gauge("statushub_receiver_in_flight", "Requests the receiver is handling right now, against its explicit ceiling.")
 	r.gauge("statushub_delivery_queue_depth", "Deliveries not yet terminal, by shard.")
 	r.gauge("statushub_shard_oldest_pending_seconds", "Age of the oldest pending delivery in a shard. Head-of-line blocking shows up here first.")
 	r.gauge("statushub_destination_breaker_open", "1 when a destination's circuit breaker is not closed. Deliveries to it are parked, not failing.")

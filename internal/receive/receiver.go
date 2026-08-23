@@ -29,6 +29,7 @@ import (
 	"github.com/nobledeveloper01/StatusHub/internal/adapters"
 	"github.com/nobledeveloper01/StatusHub/internal/domain"
 	"github.com/nobledeveloper01/StatusHub/internal/metrics"
+	"github.com/nobledeveloper01/StatusHub/internal/ratelimit"
 	"github.com/nobledeveloper01/StatusHub/internal/redact"
 	"github.com/nobledeveloper01/StatusHub/internal/secret"
 	"github.com/nobledeveloper01/StatusHub/internal/store"
@@ -69,6 +70,18 @@ type Receiver struct {
 	// now is injectable so the timestamp-window tests do not have to sleep.
 	now func() time.Time
 
+	// limiter is per-tenant backpressure (§8.6). Its ceiling is deliberately
+	// far above any legitimate volume: a refused webhook is an event lost,
+	// because the provider may exhaust its retries against our 429. It exists
+	// to stop one tenant taking the service down for every other tenant, not
+	// to shape traffic.
+	limiter *ratelimit.Limiter
+
+	// inFlight bounds concurrent request handling. Without a ceiling, a burst
+	// larger than the store can absorb turns into unbounded goroutines and
+	// memory, and the process dies holding events it has acknowledged.
+	inFlight *ratelimit.Bounded
+
 	// trustProxyHeaders controls whether X-Forwarded-For is believed. Off by
 	// default: behind no proxy, the header is caller-supplied, and a source
 	// IP an attacker chooses is worse than no source IP at all — it is a
@@ -86,6 +99,14 @@ type Options struct {
 	Notifier          Notifier
 	TrustProxyHeaders bool
 	Now               func() time.Time
+
+	// PerTenantPerSecond and Burst configure backpressure. Zero means the
+	// defaults below, which are generous on purpose.
+	PerTenantPerSecond float64
+	Burst              float64
+
+	// MaxInFlight bounds concurrent request handling.
+	MaxInFlight int
 }
 
 // New builds a Receiver.
@@ -100,6 +121,24 @@ func New(o Options) *Receiver {
 		trustProxyHeaders: o.TrustProxyHeaders,
 		now:               o.Now,
 	}
+	// 2,000/sec sustained with a 10,000 burst per tenant. The §11.9 load
+	// target is 10,000/sec across six providers for the whole service, so one
+	// tenant's ceiling sits well above anything real while still bounding the
+	// damage a runaway integration can do to its neighbours.
+	perSecond, burst := o.PerTenantPerSecond, o.Burst
+	if perSecond <= 0 {
+		perSecond = 2000
+	}
+	if burst <= 0 {
+		burst = 10000
+	}
+	r.limiter = ratelimit.New(ratelimit.Options{PerSecond: perSecond, Burst: burst, Now: o.Now})
+
+	maxInFlight := o.MaxInFlight
+	if maxInFlight <= 0 {
+		maxInFlight = 2048
+	}
+	r.inFlight = ratelimit.NewBounded("receiver_in_flight", maxInFlight)
 	if r.log == nil {
 		r.log = slog.Default()
 	}
@@ -149,6 +188,21 @@ func (r *Receiver) handleWebhook(w http.ResponseWriter, req *http.Request) {
 	start := r.now()
 	ctx := req.Context()
 
+	// The concurrency ceiling is checked before anything else, including the
+	// endpoint lookup: a flood large enough to matter is a flood we should
+	// not be doing database work for.
+	if !r.inFlight.TryAcquire() {
+		r.metrics.Inc("statushub_payload_rejected_total", metrics.Labels{"reason": "at_capacity"})
+		// One second, not a computed value: this ceiling clears in
+		// milliseconds once the burst passes, and telling a provider to wait
+		// longer would risk their own retry budget for no reason.
+		w.Header().Set("Retry-After", "1")
+		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "at_capacity"})
+		return
+	}
+	defer r.inFlight.Release()
+	r.metrics.Set("statushub_receiver_in_flight", nil, float64(r.inFlight.InUse()))
+
 	tenantSlug := req.PathValue("tenant")
 	provider := req.PathValue("provider")
 	env := req.PathValue("env")
@@ -167,6 +221,25 @@ func (r *Receiver) handleWebhook(w http.ResponseWriter, req *http.Request) {
 		// 404 again, not 403. A disabled endpoint should look exactly like
 		// one that was never created.
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not_found"})
+		return
+	}
+
+	// Per-tenant backpressure, after the endpoint resolves so the limit is
+	// keyed on the tenant rather than on an unauthenticated caller — an
+	// attacker must not be able to consume a tenant's allowance by posting
+	// nonsense at a URL they guessed.
+	if d := r.limiter.Allow(tenant.ID); !d.Allowed {
+		r.metrics.Inc("statushub_payload_rejected_total", metrics.Labels{
+			"reason": "rate_limited", "provider": endpoint.Provider,
+		})
+		r.log.WarnContext(ctx, "tenant is over its receive rate limit; the provider is being told to retry",
+			"tenant", tenant.ID, "provider", endpoint.Provider,
+			"retry_after", d.RetryAfter, "limit", d.Limit)
+		// A 429 with Retry-After, never a silent queue. Providers honour it,
+		// and the alternative — accepting until we fall over — loses events
+		// for every tenant rather than delaying them for one.
+		w.Header().Set("Retry-After", d.Header())
+		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "rate_limited"})
 		return
 	}
 
