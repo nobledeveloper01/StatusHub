@@ -26,3 +26,4 @@ sdk/node/dist/
 sdk/python/.venv/
 sdk/python/dist/
 __pycache__/
+sdk/node/package-lock.json

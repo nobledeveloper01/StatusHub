@@ -92,4 +92,7 @@ test-sdks: ## The Node and Python client libraries, against the Go-signed fixtur
 	cd sdk/node && npm install --silent && npm run build && node --test test/*.test.js
 	cd sdk/python && python3 -m pytest tests/ -q
 
-ci: fmt vet crosscheck lint sync-migrations test-integration ## What CI runs
+sdk-fixtures: ## Regenerate the signature vectors the client libraries verify against
+	go test ./tests -run GenerateSDKFixtures
+
+ci: fmt vet crosscheck lint sync-migrations test-integration test-sdks ## What CI runs

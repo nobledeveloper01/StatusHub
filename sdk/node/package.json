@@ -1,0 +1,24 @@
+{
+  "name": "@statushub/node",
+  "version": "1.0.0",
+  "description": "StatusHub client library — verify delivery signatures and read the canonical event schema.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": ["dist", "README.md", "LICENSE"],
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "node --test test/*.test.js"
+  },
+  "devDependencies": { "typescript": "^5.6.0", "@types/node": "^22.0.0" },
+  "repository": { "type": "git", "url": "https://github.com/nobledeveloper01/StatusHub.git" },
+  "keywords": ["webhooks", "fintech", "paystack", "flutterwave", "stripe", "statushub"]
+}

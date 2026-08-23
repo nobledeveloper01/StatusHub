@@ -64,6 +64,42 @@ jobs:
       - name: Adapter corpus and signature vectors
         run: go test -race ./tests/... -run 'Adapter' -v
 
+  sdks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # The fixtures come from the server's own signing code. Regenerating
+      # them here means a signing change that the client libraries do not
+      # follow fails CI rather than production.
+      - name: Regenerate the signature vectors
+        run: go test ./tests -run GenerateSDKFixtures
+
+      - name: The vectors must be committed and current
+        run: git diff --exit-code sdk/fixtures/
+
+      - name: Node library
+        run: |
+          cd sdk/node
+          npm install --silent
+          npm run build
+          node --test test/*.test.js
+
+      - name: Python library
+        run: |
+          cd sdk/python
+          python -m pip install --quiet pytest
+          python -m pytest tests/ -q
+
   security:
     runs-on: ubuntu-latest
     steps:

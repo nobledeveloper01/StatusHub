@@ -1,0 +1,106 @@
+{
+  "generated_by": "go test ./tests -run GenerateSDKFixtures",
+  "note": "One source of truth for every client library. Three implementations agreeing with each other but not with the server is the failure this file exists to prevent, so these vectors are produced by the server's own signing code.",
+  "vectors": [
+    {
+      "name": "genuine",
+      "description": "a real delivery, verified within the window",
+      "secret": "whsec_fixture_secret_do_not_use_in_production",
+      "body": "{\"event_id\":\"sh_evt_06G2RSD7HMN7MWNH515A53PEE8\",\"event_type\":\"payment.completed\",\"provider\":\"paystack\",\"transaction_ref\":\"TXN-2026-08-11-8842\",\"status\":\"success\",\"amount_minor\":5000000,\"currency\":\"NGN\",\"occurred_at\":\"2026-08-23T02:14:14.669554Z\",\"received_at\":\"2026-08-23T02:14:14.669555Z\",\"mapping_complete\":true}",
+      "signature_header": "t=1786439671,v1=7d527f978f33a488a19aa877e98727be6e8d30bdd9befdf31ea01604296a5095",
+      "now_unix": 1786439671,
+      "tolerance_seconds": 300,
+      "should_pass": true
+    },
+    {
+      "name": "rotation",
+      "description": "two v1 signatures during a secret rotation; either matching is enough",
+      "secret": "whsec_fixture_secret_do_not_use_in_production",
+      "body": "{\"event_id\":\"sh_evt_06G2RSD7HMN7MWNH515A53PEE8\",\"event_type\":\"payment.completed\",\"provider\":\"paystack\",\"transaction_ref\":\"TXN-2026-08-11-8842\",\"status\":\"success\",\"amount_minor\":5000000,\"currency\":\"NGN\",\"occurred_at\":\"2026-08-23T02:14:14.669554Z\",\"received_at\":\"2026-08-23T02:14:14.669555Z\",\"mapping_complete\":true}",
+      "signature_header": "t=1786439671,v1=bfd2464529a71704dd17e445a0b73edc390b17fbd5aa3cc0061e3f8ebbc5552a,v1=7d527f978f33a488a19aa877e98727be6e8d30bdd9befdf31ea01604296a5095",
+      "now_unix": 1786439671,
+      "tolerance_seconds": 300,
+      "should_pass": true
+    },
+    {
+      "name": "unknown_header_element",
+      "description": "an element the library has never seen must be ignored, not rejected",
+      "secret": "whsec_fixture_secret_do_not_use_in_production",
+      "body": "{\"event_id\":\"sh_evt_06G2RSD7HMN7MWNH515A53PEE8\",\"event_type\":\"payment.completed\",\"provider\":\"paystack\",\"transaction_ref\":\"TXN-2026-08-11-8842\",\"status\":\"success\",\"amount_minor\":5000000,\"currency\":\"NGN\",\"occurred_at\":\"2026-08-23T02:14:14.669554Z\",\"received_at\":\"2026-08-23T02:14:14.669555Z\",\"mapping_complete\":true}",
+      "signature_header": "t=1786439671,v1=7d527f978f33a488a19aa877e98727be6e8d30bdd9befdf31ea01604296a5095,v2=future,scheme=whatever",
+      "now_unix": 1786439671,
+      "tolerance_seconds": 300,
+      "should_pass": true
+    },
+    {
+      "name": "clock_drift_forward",
+      "description": "a sender running two minutes fast is inside a symmetric window",
+      "secret": "whsec_fixture_secret_do_not_use_in_production",
+      "body": "{\"event_id\":\"sh_evt_06G2RSD7HMN7MWNH515A53PEE8\",\"event_type\":\"payment.completed\",\"provider\":\"paystack\",\"transaction_ref\":\"TXN-2026-08-11-8842\",\"status\":\"success\",\"amount_minor\":5000000,\"currency\":\"NGN\",\"occurred_at\":\"2026-08-23T02:14:14.669554Z\",\"received_at\":\"2026-08-23T02:14:14.669555Z\",\"mapping_complete\":true}",
+      "signature_header": "t=1786439671,v1=7d527f978f33a488a19aa877e98727be6e8d30bdd9befdf31ea01604296a5095",
+      "now_unix": 1786439551,
+      "tolerance_seconds": 300,
+      "should_pass": true
+    },
+    {
+      "name": "replayed",
+      "description": "the digest is genuine; only the timestamp window stops this",
+      "secret": "whsec_fixture_secret_do_not_use_in_production",
+      "body": "{\"event_id\":\"sh_evt_06G2RSD7HMN7MWNH515A53PEE8\",\"event_type\":\"payment.completed\",\"provider\":\"paystack\",\"transaction_ref\":\"TXN-2026-08-11-8842\",\"status\":\"success\",\"amount_minor\":5000000,\"currency\":\"NGN\",\"occurred_at\":\"2026-08-23T02:14:14.669554Z\",\"received_at\":\"2026-08-23T02:14:14.669555Z\",\"mapping_complete\":true}",
+      "signature_header": "t=1786439671,v1=7d527f978f33a488a19aa877e98727be6e8d30bdd9befdf31ea01604296a5095",
+      "now_unix": 1786443271,
+      "tolerance_seconds": 300,
+      "should_pass": false
+    },
+    {
+      "name": "tampered_body",
+      "description": "the amount was changed after signing",
+      "secret": "whsec_fixture_secret_do_not_use_in_production",
+      "body": "{\"event_id\":\"sh_evt_1\",\"amount_minor\":1}",
+      "signature_header": "t=1786439671,v1=7d527f978f33a488a19aa877e98727be6e8d30bdd9befdf31ea01604296a5095",
+      "now_unix": 1786439671,
+      "tolerance_seconds": 300,
+      "should_pass": false
+    },
+    {
+      "name": "wrong_secret",
+      "description": "signed with a secret this endpoint does not hold",
+      "secret": "a-different-secret",
+      "body": "{\"event_id\":\"sh_evt_06G2RSD7HMN7MWNH515A53PEE8\",\"event_type\":\"payment.completed\",\"provider\":\"paystack\",\"transaction_ref\":\"TXN-2026-08-11-8842\",\"status\":\"success\",\"amount_minor\":5000000,\"currency\":\"NGN\",\"occurred_at\":\"2026-08-23T02:14:14.669554Z\",\"received_at\":\"2026-08-23T02:14:14.669555Z\",\"mapping_complete\":true}",
+      "signature_header": "t=1786439671,v1=7d527f978f33a488a19aa877e98727be6e8d30bdd9befdf31ea01604296a5095",
+      "now_unix": 1786439671,
+      "tolerance_seconds": 300,
+      "should_pass": false
+    },
+    {
+      "name": "no_timestamp",
+      "description": "a header with a signature but no timestamp is malformed",
+      "secret": "whsec_fixture_secret_do_not_use_in_production",
+      "body": "{\"event_id\":\"sh_evt_06G2RSD7HMN7MWNH515A53PEE8\",\"event_type\":\"payment.completed\",\"provider\":\"paystack\",\"transaction_ref\":\"TXN-2026-08-11-8842\",\"status\":\"success\",\"amount_minor\":5000000,\"currency\":\"NGN\",\"occurred_at\":\"2026-08-23T02:14:14.669554Z\",\"received_at\":\"2026-08-23T02:14:14.669555Z\",\"mapping_complete\":true}",
+      "signature_header": "v1=deadbeef",
+      "now_unix": 1786439671,
+      "tolerance_seconds": 300,
+      "should_pass": false
+    },
+    {
+      "name": "no_signature",
+      "description": "a header with a timestamp but no signature is malformed",
+      "secret": "whsec_fixture_secret_do_not_use_in_production",
+      "body": "{\"event_id\":\"sh_evt_06G2RSD7HMN7MWNH515A53PEE8\",\"event_type\":\"payment.completed\",\"provider\":\"paystack\",\"transaction_ref\":\"TXN-2026-08-11-8842\",\"status\":\"success\",\"amount_minor\":5000000,\"currency\":\"NGN\",\"occurred_at\":\"2026-08-23T02:14:14.669554Z\",\"received_at\":\"2026-08-23T02:14:14.669555Z\",\"mapping_complete\":true}",
+      "signature_header": "t=1786511671",
+      "now_unix": 1786439671,
+      "tolerance_seconds": 300,
+      "should_pass": false
+    },
+    {
+      "name": "empty_header",
+      "description": "no signature at all",
+      "secret": "whsec_fixture_secret_do_not_use_in_production",
+      "body": "{\"event_id\":\"sh_evt_06G2RSD7HMN7MWNH515A53PEE8\",\"event_type\":\"payment.completed\",\"provider\":\"paystack\",\"transaction_ref\":\"TXN-2026-08-11-8842\",\"status\":\"success\",\"amount_minor\":5000000,\"currency\":\"NGN\",\"occurred_at\":\"2026-08-23T02:14:14.669554Z\",\"received_at\":\"2026-08-23T02:14:14.669555Z\",\"mapping_complete\":true}",
+      "signature_header": "",
+      "now_unix": 1786439671,
+      "tolerance_seconds": 300,
+      "should_pass": false
+    }
+  ]
+}
