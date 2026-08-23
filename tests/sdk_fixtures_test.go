@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/nobledeveloper01/StatusHub/internal/dispatch"
+	"github.com/nobledeveloper01/StatusHub/internal/domain"
 )
 
 // TestGenerateSDKFixtures writes the vectors the Node and Python libraries
@@ -28,7 +29,23 @@ func TestGenerateSDKFixtures(t *testing.T) {
 	at := time.Date(2026, 8, 11, 9, 14, 31, 0, time.UTC)
 	const secret = "whsec_fixture_secret_do_not_use_in_production"
 
-	body, err := json.Marshal(dispatch.BuildPayload(shadowEvent("TXN-2026-08-11-8842"), nil))
+	// Fixed, not generated. An event ID or timestamp that moves makes every
+	// regeneration produce a diff, which turns the "fixtures are current" CI
+	// gate into one that fails constantly and is therefore removed — and then
+	// nothing checks that the client libraries still agree with the server.
+	body, err := json.Marshal(dispatch.BuildPayload(domain.CanonicalEvent{
+		ID:              "sh_evt_06G2R1RMDNS3N9PR5X2XGSDY9G",
+		TenantID:        "tnt_fixture",
+		Provider:        "paystack",
+		EventType:       domain.EventPaymentCompleted,
+		TransactionRef:  "TXN-2026-08-11-8842",
+		Status:          domain.StatusSuccess,
+		AmountMinor:     5000000,
+		Currency:        "NGN",
+		OccurredAt:      at,
+		ReceivedAt:      at,
+		MappingComplete: true,
+	}, nil))
 	mustNoErr(t, err, "marshalling the canonical payload")
 
 	type vector struct {
