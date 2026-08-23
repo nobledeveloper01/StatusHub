@@ -11,7 +11,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -249,7 +248,8 @@ func (d *Dispatcher) DeliverOnce(ctx context.Context, del domain.Delivery) error
 		}
 	}
 
-	body, err := json.Marshal(BuildPayload(event, raw))
+	schema := ResolveSchema(SchemaVersion(dest.SchemaVersion))
+	body, err := RenderPayload(schema, event, raw)
 	if err != nil {
 		// Unmarshalable content is permanent, so it dead-letters immediately
 		// rather than burning nine hours of retries on something that cannot
@@ -279,6 +279,10 @@ func (d *Dispatcher) DeliverOnce(ctx context.Context, del domain.Delivery) error
 	req.Header.Set("User-Agent", "StatusHub/1.0")
 	req.Header.Set(SignatureHeader, SignWith(secrets, body, start))
 	req.Header.Set("X-StatusHub-Event-Id", event.ID)
+	// Which shape this is. A handler that receives something unexpected and
+	// cannot say which version it was makes the support conversation start
+	// with "what did you send us" rather than with the answer.
+	req.Header.Set(SchemaHeader, string(schema))
 	req.Header.Set("X-StatusHub-Replay", fmt.Sprintf("%t", del.IsReplay))
 	req.Header.Set("X-StatusHub-Attempt", fmt.Sprintf("%d", del.Attempt))
 	// The idempotency key is the event ID and not the delivery ID, so a retry

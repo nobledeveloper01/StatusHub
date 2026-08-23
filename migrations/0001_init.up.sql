@@ -76,6 +76,10 @@ CREATE TABLE destinations (
     filter              JSONB NOT NULL DEFAULT '{}',
     retry_policy        JSONB NOT NULL DEFAULT '{}',
     include_raw         BOOLEAN NOT NULL DEFAULT false,
+    -- Empty means the destination predates versioning and receives the
+    -- original shape. Never defaulted to the newest: silently moving an
+    -- existing handler onto a new payload is what versioning prevents.
+    schema_version      TEXT NOT NULL DEFAULT '',
     enabled             BOOLEAN NOT NULL DEFAULT true,
     created_at          TIMESTAMPTZ NOT NULL DEFAULT now()
 );

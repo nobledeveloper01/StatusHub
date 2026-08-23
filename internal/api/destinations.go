@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/nobledeveloper01/StatusHub/internal/auth"
+	"github.com/nobledeveloper01/StatusHub/internal/dispatch"
 	"github.com/nobledeveloper01/StatusHub/internal/domain"
 )
 
@@ -17,6 +18,7 @@ type destinationView struct {
 	Filter             domain.Filter `json:"filter"`
 	RetryScheduleHuman []string      `json:"retry_schedule"`
 	IncludeRaw         bool          `json:"include_raw"`
+	SchemaVersion      string        `json:"schema_version"`
 	Enabled            bool          `json:"enabled"`
 	CreatedAt          time.Time     `json:"created_at"`
 }
@@ -36,7 +38,10 @@ func viewDestination(d domain.Destination) destinationView {
 	return destinationView{
 		ID: d.ID, Name: d.Name, URL: d.URL, SigningSecretRef: d.SigningSecretRef,
 		Filter: d.Filter, RetryScheduleHuman: schedule, IncludeRaw: d.IncludeRaw,
-		Enabled: d.Enabled, CreatedAt: d.CreatedAt,
+		// Resolved rather than echoed, so the response says which shape will
+		// actually be delivered rather than which one happens to be stored.
+		SchemaVersion: string(dispatch.ResolveSchema(dispatch.SchemaVersion(d.SchemaVersion))),
+		Enabled:       d.Enabled, CreatedAt: d.CreatedAt,
 	}
 }
 
@@ -46,6 +51,11 @@ type createDestinationRequest struct {
 	SigningSecretRef string        `json:"signing_secret_ref"`
 	Filter           domain.Filter `json:"filter,omitempty"`
 	IncludeRaw       bool          `json:"include_raw,omitempty"`
+
+	// SchemaVersion pins the payload shape. Omitted means the newest at
+	// creation time, which is safe here because the destination has no
+	// existing handler to break.
+	SchemaVersion string `json:"schema_version,omitempty"`
 
 	// RetryBackoffSeconds overrides the default schedule. Expressed in
 	// seconds rather than as a duration string because it is written by
@@ -89,6 +99,18 @@ func (s *Server) handleCreateDestination(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadRequest, "signing_secret_ref does not resolve: "+err.Error())
 		return
 	}
+	schema := dispatch.SchemaVersion(req.SchemaVersion)
+	if schema == "" {
+		// A brand-new destination gets the newest shape. An existing one
+		// never moves on its own — that asymmetry is the whole mechanism.
+		schema = dispatch.SchemaLatest
+	}
+	if !dispatch.ValidSchemaVersion(schema) {
+		writeError(w, http.StatusBadRequest,
+			"schema_version "+req.SchemaVersion+" is not served; GET /v1/schema-versions lists what is")
+		return
+	}
+
 	if err := req.Filter.Validate(); err != nil {
 		// A filter naming a status that does not exist matches nothing, and a
 		// destination that silently receives nothing is the hardest kind of
@@ -116,7 +138,7 @@ func (s *Server) handleCreateDestination(w http.ResponseWriter, r *http.Request)
 		ID: domain.NewID(domain.PrefixDestination), TenantID: id.TenantID,
 		Name: req.Name, URL: req.URL, SigningSecretRef: req.SigningSecretRef,
 		Filter: req.Filter, RetryPolicy: policy, IncludeRaw: req.IncludeRaw,
-		Enabled: true, CreatedAt: s.now(),
+		SchemaVersion: string(schema), Enabled: true, CreatedAt: s.now(),
 	}
 	if err := s.store.CreateDestination(r.Context(), dest); err != nil {
 		writeStoreError(w, err)
@@ -125,7 +147,8 @@ func (s *Server) handleCreateDestination(w http.ResponseWriter, r *http.Request)
 
 	s.audit(r.Context(), id, domain.AuditDestinationCreated,
 		domain.Subject{Type: "destination", ID: dest.ID},
-		map[string]any{"url": dest.URL, "include_raw": dest.IncludeRaw})
+		map[string]any{"url": dest.URL, "include_raw": dest.IncludeRaw,
+			"schema_version": dest.SchemaVersion})
 
 	writeJSON(w, http.StatusCreated, viewDestination(dest))
 }

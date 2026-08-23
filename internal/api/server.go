@@ -111,6 +111,10 @@ func (s *Server) Handler() http.Handler {
 	authed.HandleFunc("DELETE /v1/destinations/{id}", requireRole(auth.RoleEngineer, s.handleDeleteDestination))
 
 	// Adapters.
+	// Published so a customer can see what shapes exist and when one retires,
+	// rather than discovering a version change from a broken handler.
+	authed.HandleFunc("GET /v1/schema-versions", requireRole(auth.RoleReadOnly, s.handleSchemaVersions))
+
 	authed.HandleFunc("GET /v1/adapters", requireRole(auth.RoleReadOnly, s.handleListAdapters))
 	authed.HandleFunc("POST /v1/adapters", requireRole(auth.RoleEngineer, s.idempotent(s.handleUploadAdapter)))
 	authed.HandleFunc("POST /v1/adapters/{name}/test", requireRole(auth.RoleEngineer, s.handleTestAdapter))
@@ -141,6 +145,15 @@ func (s *Server) Handler() http.Handler {
 
 	mux.Handle("/v1/", s.authenticate(authed))
 	return securityHeaders(s.recoverPanic(mux))
+}
+
+func (s *Server) handleSchemaVersions(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{
+		"versions": dispatch.SchemaVersions(),
+		"latest":   string(dispatch.SchemaLatest),
+		"note": "A destination keeps the version it was created with. Moving to a newer one is a change " +
+			"you make on a day you chose; a version is never retired without a dated notice.",
+	})
 }
 
 func (s *Server) handleHealthz(w http.ResponseWriter, _ *http.Request) {

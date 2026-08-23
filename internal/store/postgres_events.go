@@ -14,7 +14,7 @@ import (
 // --- Destinations ---
 
 const destinationColumns = `id, tenant_id, name, url, signing_secret_ref, filter,
-	retry_policy, include_raw, enabled, created_at`
+	retry_policy, include_raw, schema_version, enabled, created_at`
 
 type retryPolicyJSON struct {
 	BackoffSeconds []float64 `json:"backoff_seconds"`
@@ -64,9 +64,9 @@ func (p *Postgres) CreateDestination(ctx context.Context, d domain.Destination) 
 		return fmt.Errorf("encoding the retry policy: %w", err)
 	}
 	_, err = p.pool.Exec(ctx,
-		`INSERT INTO destinations (`+destinationColumns+`) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+		`INSERT INTO destinations (`+destinationColumns+`) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
 		d.ID, d.TenantID, d.Name, d.URL, d.SigningSecretRef, filter, policy,
-		d.IncludeRaw, d.Enabled, orNow(d.CreatedAt))
+		d.IncludeRaw, d.SchemaVersion, d.Enabled, orNow(d.CreatedAt))
 	return mapError(err)
 }
 
@@ -106,9 +106,10 @@ func (p *Postgres) UpdateDestination(ctx context.Context, tenantID string, d dom
 	}
 	tag, err := p.pool.Exec(ctx,
 		`UPDATE destinations SET name=$3, url=$4, signing_secret_ref=$5, filter=$6,
-		   retry_policy=$7, include_raw=$8, enabled=$9
+		   retry_policy=$7, include_raw=$8, schema_version=$9, enabled=$10
 		 WHERE tenant_id=$1 AND id=$2`,
-		tenantID, d.ID, d.Name, d.URL, d.SigningSecretRef, filter, policy, d.IncludeRaw, d.Enabled)
+		tenantID, d.ID, d.Name, d.URL, d.SigningSecretRef, filter, policy,
+		d.IncludeRaw, d.SchemaVersion, d.Enabled)
 	if err != nil {
 		return mapError(err)
 	}
@@ -136,7 +137,7 @@ func scanDestination(row scanner) (domain.Destination, error) {
 		policy []byte
 	)
 	err := row.Scan(&d.ID, &d.TenantID, &d.Name, &d.URL, &d.SigningSecretRef,
-		&filter, &policy, &d.IncludeRaw, &d.Enabled, &d.CreatedAt)
+		&filter, &policy, &d.IncludeRaw, &d.SchemaVersion, &d.Enabled, &d.CreatedAt)
 	if err != nil {
 		return domain.Destination{}, mapError(err)
 	}

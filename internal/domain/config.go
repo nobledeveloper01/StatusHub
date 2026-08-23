@@ -159,6 +159,12 @@ type Destination struct {
 	// are the most sensitive thing we hold (§8.4).
 	IncludeRaw bool
 
+	// SchemaVersion pins the payload shape this destination receives. Empty
+	// means the destination predates versioning and gets the original shape —
+	// never the newest, because silently moving an existing handler onto a
+	// new shape is the failure versioning exists to prevent.
+	SchemaVersion string
+
 	Enabled   bool
 	CreatedAt time.Time
 }
