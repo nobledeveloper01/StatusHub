@@ -1,0 +1,14 @@
+{
+  "eventType": "SUCCESSFUL_TRANSACTION",
+  "eventData": {
+    "transactionReference": "MNFY|20260811|009813",
+    "paymentReference": "TXN-2026-08-11-8870",
+    "paidOn": "2026-08-11 10:00:00.000",
+    "paymentStatus": "PARTIALLY_PAID",
+    "currency": "NGN",
+    "amountPaid": 20000.00,
+    "totalPayable": 50000.00,
+    "paymentMethod": "ACCOUNT_TRANSFER",
+    "customer": { "email": "ngozi@example.com" }
+  }
+}

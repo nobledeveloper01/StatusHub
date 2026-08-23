@@ -1,0 +1,13 @@
+{
+  "transaction": {
+    "transactionRef": "ISW-88999-2026",
+    "paymentReference": "TXN-2026-08-11-8899",
+    "amount": "250000",
+    "responseCode": "51",
+    "responseDescription": "Insufficient funds",
+    "currencyCode": "566",
+    "transactionDate": "2026-08-11T10:30:00",
+    "paymentChannel": "CARD"
+  },
+  "customer": { "customerId": "CUST-8899" }
+}

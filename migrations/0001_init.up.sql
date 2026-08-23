@@ -101,6 +101,11 @@ CREATE TABLE raw_events (
     source_ip        INET,
     signature_valid  BOOLEAN NOT NULL,
     signature_error  TEXT NOT NULL DEFAULT '',
+    -- True when card data was found and replaced before storage (§8.4). The
+    -- body_sha256 above still covers the bytes that arrived, so what was
+    -- received is provable even though it is not retained.
+    redacted         BOOLEAN NOT NULL DEFAULT false,
+    redaction_note   TEXT NOT NULL DEFAULT '',
     normalised_at    TIMESTAMPTZ,
     canonical_id     TEXT,
     failure_reason   TEXT,

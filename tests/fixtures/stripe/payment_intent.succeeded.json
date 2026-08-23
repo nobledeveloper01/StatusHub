@@ -1,0 +1,23 @@
+{
+  "id": "evt_1QhX2mA1B2C3D4E5F6G7H8I9",
+  "object": "event",
+  "api_version": "2026-06-30",
+  "created": 1786511671,
+  "livemode": true,
+  "type": "payment_intent.succeeded",
+  "data": {
+    "object": {
+      "id": "pi_3QhX2mA1B2C3D4E5",
+      "object": "payment_intent",
+      "amount": 5000000,
+      "amount_received": 5000000,
+      "currency": "ngn",
+      "status": "succeeded",
+      "created": 1786511662,
+      "receipt_email": "tunde@example.com",
+      "customer": "cus_R8x2mA1B2C3",
+      "metadata": { "transaction_ref": "TXN-2026-08-11-8842", "order_id": "ORD-99312" },
+      "payment_method_types": ["card"]
+    }
+  }
+}

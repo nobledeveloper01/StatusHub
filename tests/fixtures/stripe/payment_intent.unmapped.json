@@ -1,0 +1,17 @@
+{
+  "id": "evt_1QhXunmapped000000000000",
+  "object": "event",
+  "created": 1786600000,
+  "type": "payment_intent.updated",
+  "data": {
+    "object": {
+      "id": "pi_3QhXunmapped0000",
+      "object": "payment_intent",
+      "amount": 100000,
+      "currency": "usd",
+      "status": "requires_settlement_confirmation",
+      "created": 1786599990,
+      "metadata": { "transaction_ref": "TXN-2026-08-11-9100" }
+    }
+  }
+}

@@ -38,8 +38,22 @@ type RawEvent struct {
 	// Body is verbatim. Not re-marshalled, not pretty-printed, not
 	// re-encoded — signature verification is over these exact bytes, and a
 	// round trip through a JSON decoder would change them.
-	Body       []byte
+	Body []byte
+
+	// BodySHA256 is the hash of the bytes that arrived, computed before any
+	// redaction. It is the deduplication key for providers that supply no
+	// event ID, and it is the proof of what was received even when what is
+	// stored is not byte-identical.
 	BodySHA256 string
+
+	// Redacted is true when card data was found and replaced before storage
+	// (§8.4). The stored Body then differs from the bytes the signature
+	// covered, so it can no longer be re-verified — a trade recorded in
+	// ADR-002 and made deliberately: not holding card data is worth more than
+	// being able to re-check a signature we already checked once, on the
+	// request path, against the original bytes.
+	Redacted      bool
+	RedactionNote string
 
 	SourceIP       netip.Addr
 	SignatureValid bool
@@ -99,6 +113,10 @@ type CanonicalEvent struct {
 	// UnmappedStatus is the provider's own status string when Status came out
 	// unknown, so the operator can see exactly what needs mapping.
 	UnmappedStatus string
+
+	// Redacted carries forward the raw event's redaction flag, so a customer
+	// reading a forwarded event knows the stored original is not byte-exact.
+	Redacted bool
 }
 
 // Validate checks the invariants the rest of the system is allowed to assume.

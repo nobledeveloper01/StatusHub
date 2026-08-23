@@ -29,6 +29,7 @@ import (
 	"github.com/nobledeveloper01/StatusHub/internal/adapters"
 	"github.com/nobledeveloper01/StatusHub/internal/domain"
 	"github.com/nobledeveloper01/StatusHub/internal/metrics"
+	"github.com/nobledeveloper01/StatusHub/internal/redact"
 	"github.com/nobledeveloper01/StatusHub/internal/secret"
 	"github.com/nobledeveloper01/StatusHub/internal/store"
 )
@@ -184,19 +185,42 @@ func (r *Receiver) handleWebhook(w http.ResponseWriter, req *http.Request) {
 	}
 
 	sourceIP := r.sourceAddr(req)
+
+	// The hash covers the bytes that arrived, before any redaction. It is the
+	// dedupe key for providers with no event ID, and the proof of what was
+	// received even where the stored copy has been altered.
 	sum := sha256.Sum256(body)
 	bodyHash := hex.EncodeToString(sum[:])
 
+	// Verification runs against the original bytes below; only what is
+	// stored is redacted. Doing it the other way round would fail every
+	// signature the moment a provider put a card number in a description
+	// field.
+	scan := redact.Scan(body)
+
 	raw := domain.RawEvent{
-		ID:         domain.NewID(domain.PrefixRawEvent),
-		TenantID:   tenant.ID,
-		EndpointID: endpoint.ID,
-		Provider:   endpoint.Provider,
-		Headers:    sanitiseHeaders(req.Header),
-		Body:       body,
-		BodySHA256: bodyHash,
-		SourceIP:   sourceIP,
-		ReceivedAt: start,
+		ID:            domain.NewID(domain.PrefixRawEvent),
+		TenantID:      tenant.ID,
+		EndpointID:    endpoint.ID,
+		Provider:      endpoint.Provider,
+		Headers:       sanitiseHeaders(req.Header),
+		Body:          scan.Body,
+		BodySHA256:    bodyHash,
+		Redacted:      scan.Redacted,
+		RedactionNote: scan.Describe(),
+		SourceIP:      sourceIP,
+		ReceivedAt:    start,
+	}
+	if scan.Redacted {
+		r.metrics.Inc("statushub_payload_rejected_total", metrics.Labels{
+			"reason": "pan_redacted", "provider": endpoint.Provider,
+		})
+		// Warn, not error: nothing is broken and the event is intact. It is
+		// worth an operator noticing, because a provider that starts sending
+		// card data is a conversation to have with that provider.
+		r.log.WarnContext(ctx, "card data removed from a provider payload before storage",
+			"provider", endpoint.Provider, "tenant", tenant.ID, "endpoint", endpoint.ID,
+			"detail", scan.Describe())
 	}
 
 	// Verification. Failure does not stop the event being stored (§10.1):

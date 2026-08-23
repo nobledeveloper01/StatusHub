@@ -1,0 +1,11 @@
+{
+  "sessionId": "999240260811091500000087654321",
+  "paymentReference": "TXN-2026-08-11-8850",
+  "amount": "12500.50",
+  "responseCode": "96",
+  "currency": "NGN",
+  "transactionDateTime": "2026-08-11 09:15:00",
+  "originatorAccountName": "NGOZI EZE",
+  "narration": "Transfer",
+  "channelCode": "2"
+}

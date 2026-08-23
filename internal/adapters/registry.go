@@ -10,7 +10,11 @@ import (
 
 	"github.com/nobledeveloper01/StatusHub/internal/adapter"
 	"github.com/nobledeveloper01/StatusHub/internal/adapters/flutterwave"
+	"github.com/nobledeveloper01/StatusHub/internal/adapters/interswitch"
+	"github.com/nobledeveloper01/StatusHub/internal/adapters/monnify"
+	"github.com/nobledeveloper01/StatusHub/internal/adapters/nibss"
 	"github.com/nobledeveloper01/StatusHub/internal/adapters/paystack"
+	"github.com/nobledeveloper01/StatusHub/internal/adapters/stripe"
 )
 
 // ErrUnknownAdapter is returned when an endpoint names an adapter that is
@@ -40,6 +44,10 @@ func New() *Registry {
 	for _, a := range []adapter.Adapter{
 		paystack.New(),
 		flutterwave.New(),
+		nibss.New(),
+		monnify.New(),
+		interswitch.New(),
+		stripe.New(),
 	} {
 		r.builtin[a.Name()] = a
 	}

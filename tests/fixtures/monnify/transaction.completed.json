@@ -1,0 +1,17 @@
+{
+  "eventType": "SUCCESSFUL_TRANSACTION",
+  "eventData": {
+    "product": { "reference": "TXN-2026-08-11-8842", "type": "RESERVED_ACCOUNT" },
+    "transactionReference": "MNFY|20260811|009812",
+    "paymentReference": "TXN-2026-08-11-8842",
+    "paidOn": "2026-08-11 09:14:31.000",
+    "paymentStatus": "PAID",
+    "paymentDescription": "Acme order",
+    "currency": "NGN",
+    "amountPaid": 50000.00,
+    "totalPayable": 50000.00,
+    "settlementAmount": 49950.00,
+    "paymentMethod": "ACCOUNT_TRANSFER",
+    "customer": { "email": "tunde@example.com", "name": "Tunde Adebayo" }
+  }
+}
