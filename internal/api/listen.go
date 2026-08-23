@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 	"time"
@@ -78,7 +79,7 @@ func (s *Server) handlePollListen(w http.ResponseWriter, r *http.Request) {
 
 	deliveries, err := s.tunnel.Poll(r.Context(), id.TenantID, r.PathValue("id"), max)
 	switch {
-	case err == tunnel.ErrNoSession:
+	case errors.Is(err, tunnel.ErrNoSession):
 		// Expired rather than forbidden: the developer's laptop slept, and
 		// the CLI should start a new session rather than treat this as a
 		// permissions problem.

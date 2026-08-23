@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -323,13 +322,4 @@ func deref(s *string) string {
 		return ""
 	}
 	return *s
-}
-
-// placeholders builds "$n,$n+1,…" for a variable-length IN clause.
-func placeholders(start, n int) string {
-	parts := make([]string, n)
-	for i := range parts {
-		parts[i] = fmt.Sprintf("$%d", start+i)
-	}
-	return strings.Join(parts, ",")
 }

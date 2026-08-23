@@ -33,7 +33,7 @@ func run() error {
 	showVersion := fs.Bool("version", false, "print the version and exit")
 
 	fs.Usage = func() {
-		fmt.Fprintf(fs.Output(), `StatusHub %s — one webhook receiver in front of every payment provider.
+		_, _ = fmt.Fprintf(fs.Output(), `StatusHub %s — one webhook receiver in front of every payment provider.
 
 Usage:
   statushub serve [flags]

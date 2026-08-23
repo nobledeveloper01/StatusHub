@@ -259,6 +259,17 @@ func verifySecret(secret, encoded string) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("hash digest is unreadable: %w", err)
 	}
+	// The length is bounded by the stored digest, which we wrote ourselves at
+	// argonKeyLen. Guarded anyway: a corrupted row must not be able to steer
+	// a conversion into an overflow.
+	if len(want) == 0 || len(want) > 1024 {
+		return false, fmt.Errorf("hash digest length %d is not plausible", len(want))
+	}
+	// The digest length is fixed by us at argonKeyLen and checked above, so
+	// the conversion is safe — but a conversion whose safety depends on a
+	// check three lines earlier is one a reader has to verify, so the bound
+	// is restated here where the conversion happens.
+	// #nosec G115 -- len(want) is bounded to [1, 1024] immediately above.
 	got := argon2.IDKey([]byte(secret), salt, timeCost, memory, threads, uint32(len(want)))
 	return subtle.ConstantTimeCompare(got, want) == 1, nil
 }

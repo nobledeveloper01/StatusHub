@@ -35,13 +35,12 @@ func cmdDoctor(ctx context.Context, args []string) error {
 	var failed bool
 	check := func(name string, fn func() (string, error)) {
 		detail, err := fn()
-		switch {
-		case err == nil:
-			fmt.Printf("  ok      %-22s %s\n", name, detail)
-		default:
+		if err != nil {
 			failed = true
 			fmt.Printf("  FAILED  %-22s %v\n", name, err)
+			return
 		}
+		fmt.Printf("  ok      %-22s %s\n", name, detail)
 	}
 
 	check("database", func() (string, error) {

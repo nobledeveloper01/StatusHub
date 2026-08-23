@@ -105,7 +105,7 @@ var responseCodes = map[string]domain.Status{
 func (a *Adapter) Parse(rawBody []byte) (domain.CanonicalEvent, error) {
 	doc, err := jsonpath.Decode(rawBody)
 	if err != nil {
-		return domain.CanonicalEvent{}, fmt.Errorf("%w: %v", adapter.ErrUnparseable, err)
+		return domain.CanonicalEvent{}, fmt.Errorf("%w: %w", adapter.ErrUnparseable, err)
 	}
 
 	ev := domain.CanonicalEvent{

@@ -96,7 +96,7 @@ func (g *Guard) CheckURL(ctx context.Context, raw string) error {
 	defer cancel()
 	addrs, err := g.resolver.LookupNetIP(ctx, "ip", host)
 	if err != nil {
-		return fmt.Errorf("%w: %s: %v", ErrNoAddress, host, err)
+		return fmt.Errorf("%w: %s: %w", ErrNoAddress, host, err)
 	}
 	if len(addrs) == 0 {
 		return fmt.Errorf("%w: %s", ErrNoAddress, host)
@@ -188,7 +188,7 @@ func (g *Guard) DialContext(dialer *net.Dialer) func(context.Context, string, st
 		}
 		addrs, err := g.resolver.LookupNetIP(ctx, "ip", host)
 		if err != nil {
-			return nil, fmt.Errorf("%w: %s: %v", ErrNoAddress, host, err)
+			return nil, fmt.Errorf("%w: %s: %w", ErrNoAddress, host, err)
 		}
 
 		var lastErr error

@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -349,7 +350,7 @@ func (p *Postgres) AppendAudit(ctx context.Context, r domain.AuditRecord) error 
 		`SELECT hash, seq FROM audit_records WHERE tenant_id = $1 ORDER BY seq DESC LIMIT 1`,
 		r.TenantID).Scan(&prev, &seq)
 	if err != nil {
-		if mapError(err) != ErrNotFound {
+		if !errors.Is(mapError(err), ErrNotFound) {
 			return mapError(err)
 		}
 		prev, seq = domain.GenesisHash, 0
@@ -408,7 +409,7 @@ func (p *Postgres) LastAuditHash(ctx context.Context, tenantID string) (string, 
 	var h string
 	err := p.pool.QueryRow(ctx,
 		`SELECT hash FROM audit_records WHERE tenant_id=$1 ORDER BY seq DESC LIMIT 1`, tenantID).Scan(&h)
-	if mapError(err) == ErrNotFound {
+	if errors.Is(mapError(err), ErrNotFound) {
 		return domain.GenesisHash, nil
 	}
 	return h, mapError(err)

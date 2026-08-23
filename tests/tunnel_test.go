@@ -2,6 +2,7 @@ package tests
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -122,7 +123,7 @@ func TestTunnelPollReturnsEmptyRatherThanErroringOnAQuietEndpoint(t *testing.T) 
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
 	got, err := h.Poll(ctx, tenantA, s.ID, 10)
-	if err != nil && err != context.DeadlineExceeded {
+	if err != nil && !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("a quiet poll errored: %v", err)
 	}
 	if len(got) != 0 {

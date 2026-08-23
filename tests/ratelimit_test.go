@@ -95,8 +95,13 @@ func TestBoundedSemaphoreRefusesRatherThanBlocks(t *testing.T) {
 	// Blocking would convert a capacity problem into a latency problem, and
 	// the receiver's whole design is that it answers fast or says no.
 	b := ratelimit.NewBounded("test", 2)
-	if !b.TryAcquire() || !b.TryAcquire() {
-		t.Fatal("could not fill the semaphore")
+	// Two separate acquisitions, written out rather than combined: each call
+	// has a side effect, and `a() || a()` reads as a redundant expression to
+	// anybody — including a linter — who does not know that.
+	for i := 0; i < 2; i++ {
+		if !b.TryAcquire() {
+			t.Fatalf("could not take slot %d of 2", i+1)
+		}
 	}
 
 	done := make(chan bool, 1)

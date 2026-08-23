@@ -387,6 +387,7 @@ func cmdAdapters(ctx context.Context, args []string) error {
 			return fmt.Errorf("--config is required")
 		}
 
+		// #nosec G304 -- an operator-supplied path, as above.
 		raw, err := os.ReadFile(*configPath)
 		if err != nil {
 			return err
@@ -398,6 +399,10 @@ func cmdAdapters(ctx context.Context, args []string) error {
 
 		var samples []declarative.Sample
 		for _, p := range samplePaths {
+			// #nosec G304 -- the path is an argument the operator typed. This is a
+			// CLI reading a file its user named; refusing to would make the
+			// command useless, and the operator already has whatever access
+			// the process has.
 			body, err := os.ReadFile(p)
 			if err != nil {
 				return err

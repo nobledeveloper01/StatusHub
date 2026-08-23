@@ -1,6 +1,7 @@
 package tests
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -108,7 +109,7 @@ func TestSDKHandlerIsTheWholeIntegration(t *testing.T) {
 	mustNoErr(t, err, "marshalling")
 
 	post := func(header string) int {
-		req, err := http.NewRequest(http.MethodPost, srv.URL, strings.NewReader(string(body)))
+		req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, srv.URL, strings.NewReader(string(body)))
 		mustNoErr(t, err, "building")
 		if header != "" {
 			req.Header.Set(statushub.SignatureHeader, header)

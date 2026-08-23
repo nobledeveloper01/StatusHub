@@ -88,13 +88,13 @@ func ParseTimeLayout(value, layout string, loc *time.Location) (time.Time, error
 	if loc != nil {
 		t, err := time.ParseInLocation(layout, s, loc)
 		if err != nil {
-			return time.Time{}, fmt.Errorf("%w: %q against layout %q: %v", ErrUnparseable, s, layout, err)
+			return time.Time{}, fmt.Errorf("%w: %q against layout %q: %w", ErrUnparseable, s, layout, err)
 		}
 		return t.UTC(), nil
 	}
 	t, err := time.Parse(layout, s)
 	if err != nil {
-		return time.Time{}, fmt.Errorf("%w: %q against layout %q: %v", ErrUnparseable, s, layout, err)
+		return time.Time{}, fmt.Errorf("%w: %q against layout %q: %w", ErrUnparseable, s, layout, err)
 	}
 	return t.UTC(), nil
 }

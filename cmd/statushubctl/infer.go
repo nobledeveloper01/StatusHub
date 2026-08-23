@@ -31,6 +31,10 @@ func cmdInfer(_ context.Context, args []string) error {
 
 	samples := make([]declarative.Sample, 0, len(samplePaths))
 	for _, path := range samplePaths {
+		// #nosec G304 -- the path is an argument the operator typed. This is a
+		// CLI reading a file its user named; refusing to would make the
+		// command useless, and the operator already has whatever access
+		// the process has.
 		body, err := os.ReadFile(path)
 		if err != nil {
 			return err

@@ -212,3 +212,45 @@ func TestAuditChainsAreIndependentPerTenant(t *testing.T) {
 		t.Fatalf("A intact=%v, B intact=%v", pa.Intact, pb.Intact)
 	}
 }
+
+// TestAuditHashSurvivesStoragePrecision covers the bug that only appears on
+// Linux.
+//
+// Go's clock gives nanoseconds there; Postgres stores microseconds. A record
+// sealed at nanosecond precision and read back at microsecond precision
+// hashes differently, and every verification then fails with "content does
+// not match its stored hash" — which reads exactly like tampering.
+//
+// It is invisible on macOS, where the clock has microsecond granularity and
+// the nanosecond field is always a multiple of 1000. So this asserts the
+// property directly rather than relying on the platform to expose it.
+func TestAuditHashSurvivesStoragePrecision(t *testing.T) {
+	r := domain.AuditRecord{
+		ID: "aud_1", TenantID: tenantA, EventType: domain.AuditEventForwarded,
+		// A timestamp with nanoseconds Postgres cannot hold.
+		OccurredAt: time.Date(2026, 8, 11, 9, 0, 0, 123456789, time.UTC),
+		RecordedAt: time.Date(2026, 8, 11, 9, 0, 0, 987654321, time.UTC),
+		Actor:      domain.Actor{Type: domain.ActorSystem},
+		Subject:    domain.Subject{Type: "event", ID: "sh_evt_1"},
+	}
+	mustNoErr(t, r.Seal(domain.GenesisHash), "sealing")
+
+	// Sealing must have truncated in place, so what is stored is what was
+	// hashed.
+	if r.OccurredAt.Nanosecond()%1000 != 0 || r.RecordedAt.Nanosecond()%1000 != 0 {
+		t.Fatalf("sealing left sub-microsecond precision: occurred %v, recorded %v",
+			r.OccurredAt.Nanosecond(), r.RecordedAt.Nanosecond())
+	}
+
+	// And the hash must survive the round trip a database performs.
+	roundTripped := r
+	roundTripped.OccurredAt = r.OccurredAt.Truncate(time.Microsecond)
+	roundTripped.RecordedAt = r.RecordedAt.Truncate(time.Microsecond)
+
+	got, err := roundTripped.ComputeHash()
+	mustNoErr(t, err, "recomputing after a storage round trip")
+	if got != r.Hash {
+		t.Fatalf("the hash changed across a microsecond-precision round trip:\n stored: %s\n  after: %s",
+			r.Hash, got)
+	}
+}

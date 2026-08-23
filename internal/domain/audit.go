@@ -100,7 +100,7 @@ func (r *AuditRecord) ComputeHash() (string, error) {
 		r.ID,
 		r.TenantID,
 		string(r.EventType),
-		r.OccurredAt.UTC().Format(time.RFC3339Nano),
+		r.OccurredAt.UTC().Truncate(StoragePrecision).Format(time.RFC3339Nano),
 		string(r.Actor.Type), r.Actor.ID, r.Actor.IP,
 		r.Subject.Type, r.Subject.ID,
 		payload,
@@ -110,10 +110,26 @@ func (r *AuditRecord) ComputeHash() (string, error) {
 		// The length prefix stops two different records hashing identically
 		// by shifting content across a boundary — an actor ID of "ab" with a
 		// subject of "c" must not collide with "a" and "bc".
-		fmt.Fprintf(h, "%d:%s|", len(part), part)
+		// hash.Hash never returns an error from Write.
+		_, _ = fmt.Fprintf(h, "%d:%s|", len(part), part)
 	}
 	return "sha256:" + hex.EncodeToString(h.Sum(nil)), nil
 }
+
+// StoragePrecision is the timestamp resolution the hash is computed at.
+//
+// Microseconds, because that is what Postgres stores. Go's clock gives
+// nanoseconds on Linux, so a record sealed with nanosecond precision and read
+// back at microsecond precision hashes differently — and every verification
+// fails with "content does not match its stored hash", which reads exactly
+// like tampering.
+//
+// The bug is invisible on macOS, where the clock happens to have microsecond
+// granularity and the nanosecond field is always a multiple of 1000. It
+// appears the moment the same code runs on Linux, which is to say in
+// production. Truncating here means what is hashed is precisely what
+// round-trips.
+const StoragePrecision = time.Microsecond
 
 // Seal computes and sets the record's hash. Called once, by the store, inside
 // the same transaction that inserts it.
@@ -124,6 +140,10 @@ func (r *AuditRecord) Seal(prevHash string) error {
 	if r.OccurredAt.IsZero() {
 		r.OccurredAt = r.RecordedAt
 	}
+	// Truncated before hashing, and stored truncated, so the value that is
+	// written and the value that is hashed are the same one.
+	r.RecordedAt = r.RecordedAt.UTC().Truncate(StoragePrecision)
+	r.OccurredAt = r.OccurredAt.UTC().Truncate(StoragePrecision)
 	r.PrevHash = prevHash
 	h, err := r.ComputeHash()
 	if err != nil {

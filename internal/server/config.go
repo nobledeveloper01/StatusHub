@@ -244,7 +244,7 @@ func (c Config) Validate() error {
 		// flag on a screen nobody has a reason to open.
 		return errors.New("STATUSHUB_TENANT_SALT_MASTER is required in the live environment: " +
 			"without it customer references cannot be pseudonymised and are dropped. " +
-			"Generate one with `statushubctl secrets generate`.")
+			"generate one with `statushubctl secrets --for tenant-salt`")
 	}
 	if c.Shards <= 0 || c.Shards > 4096 {
 		return fmt.Errorf("shards must be between 1 and 4096, got %d", c.Shards)

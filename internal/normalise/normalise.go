@@ -131,7 +131,7 @@ func (n *Normaliser) Process(ctx context.Context, rawEventID, tenantID string) e
 		n.log.WarnContext(ctx, "adapter could not parse a provider payload",
 			"provider", raw.Provider, "tenant", tenantID, "raw_event", rawEventID,
 			"adapter", endpoint.AdapterName, "error", err)
-		return fmt.Errorf("%w: %v", ErrNotNormalisable, err)
+		return fmt.Errorf("%w: %w", ErrNotNormalisable, err)
 	}
 
 	ev.ID = domain.NewID(domain.PrefixEvent)
@@ -185,7 +185,7 @@ func (n *Normaliser) Process(ctx context.Context, rawEventID, tenantID string) e
 		// that violate the schema everything downstream trusts.
 		n.log.ErrorContext(ctx, "adapter produced an invalid canonical event",
 			"provider", raw.Provider, "adapter", endpoint.AdapterName, "raw_event", rawEventID, "error", err)
-		return fmt.Errorf("%w: %v", ErrNotNormalisable, err)
+		return fmt.Errorf("%w: %w", ErrNotNormalisable, err)
 	}
 
 	n.recordMappingQuality(ev)

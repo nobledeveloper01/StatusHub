@@ -29,6 +29,16 @@ linters:
         linters:
           - gosec
 
+      # Test helpers close response bodies through t.Cleanup, which bodyclose
+      # cannot follow across the function boundary. The bodies *are* closed —
+      # this is the analyser's blind spot, not a leak — and contorting the
+      # helpers to satisfy it would make the tests worse to read for no
+      # correctness gain. Production code is not excluded: that is where a
+      # leaked body actually costs something.
+      - path: tests/
+        linters:
+          - bodyclose
+
 formatters:
   enable:
     - gofmt

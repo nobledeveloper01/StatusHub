@@ -117,17 +117,21 @@ func Get(provider, name string) (Sample, error) {
 // the operator's first experience of the simulator is a 401 that looks like a
 // configuration problem. Rewriting is honest: the sample's *shape* is what is
 // being tested, and a stale timestamp only exercises the clock.
-func Freshen(s Sample, now time.Time) ([]byte, error) {
+// It cannot fail. A sample that is not JSON, or that will not re-marshal, is
+// still a perfectly good sample to send — freshening is a convenience, not a
+// precondition — so the fallback to the original bytes is the contract rather
+// than an error path.
+func Freshen(s Sample, now time.Time) []byte {
 	var doc map[string]any
 	if err := json.Unmarshal(s.Body, &doc); err != nil {
-		return s.Body, nil
+		return s.Body
 	}
 	rewriteTimes(doc, now, 0)
 	out, err := json.Marshal(doc)
 	if err != nil {
-		return s.Body, nil
+		return s.Body
 	}
-	return out, nil
+	return out
 }
 
 // timeFields are the keys providers put timestamps in. Rewriting by key name
@@ -296,10 +300,7 @@ func (r Result) Explain() string {
 
 // Send posts a signed sample at a receiver URL.
 func Send(ctx context.Context, client *http.Client, url string, s Sample, secret string, now time.Time) (Result, error) {
-	body, err := Freshen(s, now)
-	if err != nil {
-		return Result{}, err
-	}
+	body := Freshen(s, now)
 	headers, err := Sign(s.Provider, body, secret, now)
 	if err != nil {
 		return Result{}, err

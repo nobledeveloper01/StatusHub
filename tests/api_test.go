@@ -76,7 +76,18 @@ func newAPIHarness(t *testing.T) *apiHarness {
 	return h
 }
 
-func (h *apiHarness) do(t *testing.T, key, method, path string, body any) (*http.Response, map[string]any) {
+// apiResponse is what the harness hands back.
+//
+// A value rather than *http.Response, because the helper has already read and
+// closed the body — and handing out a response whose body is closed invites
+// somebody to read it, and makes every call site look like a leak to anything
+// tracking response lifetimes.
+type apiResponse struct {
+	StatusCode int
+	Header     http.Header
+}
+
+func (h *apiHarness) do(t *testing.T, key, method, path string, body any) (apiResponse, map[string]any) {
 	t.Helper()
 	var rdr *bytes.Reader
 	if body != nil {
@@ -95,11 +106,14 @@ func (h *apiHarness) do(t *testing.T, key, method, path string, body any) (*http
 
 	resp, err := h.server.Client().Do(req)
 	mustNoErr(t, err, "sending")
-	t.Cleanup(func() { _ = resp.Body.Close() })
 
 	var out map[string]any
 	_ = json.NewDecoder(resp.Body).Decode(&out)
-	return resp, out
+	// Closed here rather than in a Cleanup: the body is fully read above, and
+	// deferring it to the end of the test leaks a connection per request in
+	// the tests that make dozens.
+	_ = resp.Body.Close()
+	return apiResponse{StatusCode: resp.StatusCode, Header: resp.Header}, out
 }
 
 // destinationURL is a resolvable https URL for the harness, whose guard has

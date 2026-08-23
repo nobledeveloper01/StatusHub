@@ -10,7 +10,7 @@ import (
 )
 
 // doWithKey posts with an Idempotency-Key.
-func (h *apiHarness) doWithKey(t *testing.T, key, idemKey, method, path string, body any) (*http.Response, map[string]any) {
+func (h *apiHarness) doWithKey(t *testing.T, key, idemKey, method, path string, body any) (apiResponse, map[string]any) {
 	t.Helper()
 	b, err := json.Marshal(body)
 	mustNoErr(t, err, "marshalling")
@@ -23,11 +23,11 @@ func (h *apiHarness) doWithKey(t *testing.T, key, idemKey, method, path string, 
 	}
 	resp, err := h.server.Client().Do(req)
 	mustNoErr(t, err, "sending")
-	t.Cleanup(func() { _ = resp.Body.Close() })
 
 	var out map[string]any
 	_ = json.NewDecoder(resp.Body).Decode(&out)
-	return resp, out
+	_ = resp.Body.Close()
+	return apiResponse{StatusCode: resp.StatusCode, Header: resp.Header}, out
 }
 
 // TestIdempotentCreateDoesNotIssueASecondReceiverToken is the failure this
@@ -99,7 +99,7 @@ func TestIdempotencyToleratesKeyReordering(t *testing.T) {
 	first := `{"provider":"paystack","environment":"live","secret_ref":"` + testSecretRef + `"}`
 	reordered := `{"secret_ref":"` + testSecretRef + `","environment":"live","provider":"paystack"}`
 
-	post := func(raw string) (*http.Response, map[string]any) {
+	post := func(raw string) (apiResponse, map[string]any) {
 		req, err := http.NewRequestWithContext(context.Background(), http.MethodPost,
 			h.server.URL+"/v1/endpoints", bytes.NewReader([]byte(raw)))
 		mustNoErr(t, err, "building")
@@ -108,10 +108,10 @@ func TestIdempotencyToleratesKeyReordering(t *testing.T) {
 		req.Header.Set("Idempotency-Key", "key-reorder")
 		resp, err := h.server.Client().Do(req)
 		mustNoErr(t, err, "sending")
-		t.Cleanup(func() { _ = resp.Body.Close() })
 		var out map[string]any
 		_ = json.NewDecoder(resp.Body).Decode(&out)
-		return resp, out
+		_ = resp.Body.Close()
+		return apiResponse{StatusCode: resp.StatusCode, Header: resp.Header}, out
 	}
 
 	resp, a := post(first)

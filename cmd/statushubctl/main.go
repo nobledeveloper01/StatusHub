@@ -25,7 +25,6 @@ type command struct {
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
-	defer stop()
 
 	commands := []command{
 		{"init", "create a tenant, its first endpoint and an owner key", cmdInit},
@@ -47,22 +46,30 @@ func main() {
 	}
 
 	if len(os.Args) < 2 {
+		stop()
 		printUsage(commands)
 		os.Exit(2)
 	}
 
 	name := os.Args[1]
 	for _, c := range commands {
-		if c.name == name {
-			if err := c.run(ctx, os.Args[2:]); err != nil {
-				fmt.Fprintf(os.Stderr, "statushubctl %s: %v\n", name, err)
-				os.Exit(1)
-			}
-			return
+		if c.name != name {
+			continue
 		}
+		err := c.run(ctx, os.Args[2:])
+		// The signal handler is released before exiting, because os.Exit does
+		// not run deferred functions and leaving it installed would keep the
+		// process's signal disposition changed for whatever inherits it.
+		stop()
+		if err != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "statushubctl %s: %v\n", name, err)
+			os.Exit(1)
+		}
+		return
 	}
 
-	fmt.Fprintf(os.Stderr, "statushubctl: unknown command %q\n\n", name)
+	stop()
+	_, _ = fmt.Fprintf(os.Stderr, "statushubctl: unknown command %q\n\n", name)
 	printUsage(commands)
 	os.Exit(2)
 }

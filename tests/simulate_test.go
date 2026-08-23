@@ -86,8 +86,7 @@ func TestSimulatorFreshensTimestampsSoStripeAccepts(t *testing.T) {
 	mustNoErr(t, err, "getting the sample")
 
 	now := time.Date(2027, 3, 1, 12, 0, 0, 0, time.UTC)
-	fresh, err := simulate.Freshen(s, now)
-	mustNoErr(t, err, "freshening")
+	fresh := simulate.Freshen(s, now)
 
 	var doc map[string]any
 	mustNoErr(t, json.Unmarshal(fresh, &doc), "decoding")
@@ -113,8 +112,7 @@ func TestSimulatorKeepsEachProvidersOwnFormat(t *testing.T) {
 	// never sends, and would silently stop exercising the Africa/Lagos path.
 	s, err := simulate.Get("monnify", "transaction.completed")
 	mustNoErr(t, err, "getting the sample")
-	fresh, err := simulate.Freshen(s, time.Date(2027, 3, 1, 12, 0, 0, 0, time.UTC))
-	mustNoErr(t, err, "freshening")
+	fresh := simulate.Freshen(s, time.Date(2027, 3, 1, 12, 0, 0, 0, time.UTC))
 
 	var doc map[string]any
 	mustNoErr(t, json.Unmarshal(fresh, &doc), "decoding")
