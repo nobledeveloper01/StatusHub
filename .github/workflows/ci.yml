@@ -14,7 +14,19 @@ on:
 # unpatched standard library along with it.
 env:
   GO_VERSION: 'stable'
+
+  # golangci-lint is pinned to a Go version rather than tracking stable.
+  #
+  # It embeds go/types, which panics on source files declaring a language
+  # version newer than the toolchain the linter itself was built with — so the
+  # day the runner's "stable" moves ahead of the linter's release, every lint
+  # run dies with a stack trace that says nothing about this repository.
+  #
+  # Everything else deliberately stays on stable: govulncheck reports stdlib
+  # advisories against the toolchain that built the binary, and pinning it
+  # would pin its unpatched standard library too.
   GOLANGCI_LINT_VERSION: 'v2.12.2'
+  GOLANGCI_LINT_GO_VERSION: '1.26'
 
 jobs:
   quality:
@@ -47,10 +59,6 @@ jobs:
       - name: Vet
         run: go vet ./...
 
-      - uses: golangci/golangci-lint-action@v8
-        with:
-          version: ${{ env.GOLANGCI_LINT_VERSION }}
-
       - name: Tests
         run: go test -race -coverpkg=./internal/...,./pkg/... ./tests/...
 
@@ -63,6 +71,18 @@ jobs:
       # and against known-good/known-bad signature vectors.
       - name: Adapter corpus and signature vectors
         run: go test -race ./tests/... -run 'Adapter' -v
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          # Pinned; see GOLANGCI_LINT_GO_VERSION above.
+          go-version: ${{ env.GOLANGCI_LINT_GO_VERSION }}
+      - uses: golangci/golangci-lint-action@v8
+        with:
+          version: ${{ env.GOLANGCI_LINT_VERSION }}
 
   sdks:
     runs-on: ubuntu-latest
@@ -121,7 +141,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   build:
-    needs: [quality, security]
+    needs: [quality, lint, security]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
