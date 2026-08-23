@@ -118,6 +118,8 @@ func (s *Server) Handler() http.Handler {
 	authed.HandleFunc("GET /v1/adapters", requireRole(auth.RoleReadOnly, s.handleListAdapters))
 	authed.HandleFunc("POST /v1/adapters", requireRole(auth.RoleEngineer, s.idempotent(s.handleUploadAdapter)))
 	authed.HandleFunc("POST /v1/adapters/{name}/test", requireRole(auth.RoleEngineer, s.handleTestAdapter))
+	// Proposes a draft from sample payloads. Stores nothing.
+	authed.HandleFunc("POST /v1/adapters/infer", requireRole(auth.RoleEngineer, s.handleInferAdapter))
 	authed.HandleFunc("DELETE /v1/adapters/{name}", requireRole(auth.RoleEngineer, s.handleDeleteAdapter))
 
 	// Events — the explorer's whole surface.

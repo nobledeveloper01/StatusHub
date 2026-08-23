@@ -245,6 +245,60 @@ func (s *Server) handleTestAdapter(w http.ResponseWriter, r *http.Request) {
 	}))
 }
 
+// handleInferAdapter proposes an adapter from sample payloads.
+//
+// It stores nothing and activates nothing. Everything it returns is a guess
+// made from a handful of examples, and some of those guesses — which field is
+// the amount, whether it is major or minor — are the ones that cost money
+// when wrong. So it produces a draft with its reasoning attached, and the
+// engineer reviews, edits and tests it.
+func (s *Server) handleInferAdapter(w http.ResponseWriter, r *http.Request) {
+	if _, err := auth.FromContext(r.Context()); err != nil {
+		writeStoreError(w, err)
+		return
+	}
+
+	var req struct {
+		Name     string               `json:"name"`
+		Payloads []declarative.Sample `json:"payloads"`
+	}
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "request body: "+err.Error())
+		return
+	}
+	if req.Name == "" {
+		writeError(w, http.StatusBadRequest, "name is required; it becomes the adapter's name")
+		return
+	}
+	if len(req.Payloads) < 2 {
+		// One sample cannot distinguish a field that is always present from
+		// one that happened to be there, and cannot produce a status table
+		// worth having.
+		writeError(w, http.StatusBadRequest,
+			"at least two sample payloads are needed; three or four covering success, failure and pending gives a much better draft")
+		return
+	}
+
+	proposal, err := declarative.Infer(req.Name, req.Payloads)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	// The draft is immediately dry-run against the same samples, so the
+	// response says whether it actually reads them rather than only that it
+	// compiles.
+	test := declarative.Test(proposal.Config, declarative.TestRequest{Payloads: req.Payloads})
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"proposal": proposal,
+		"summary":  proposal.Summary(),
+		"test":     test,
+		"next": "Review every guess, especially the amount unit and the timezone. Set the verification " +
+			"block from the provider's documentation. Then POST it to /v1/adapters with the same samples.",
+	})
+}
+
 // handleDeleteAdapter removes a tenant's adapter.
 func (s *Server) handleDeleteAdapter(w http.ResponseWriter, r *http.Request) {
 	id, err := auth.FromContext(r.Context())

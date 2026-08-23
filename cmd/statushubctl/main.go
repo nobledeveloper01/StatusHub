@@ -34,6 +34,7 @@ func main() {
 		{"endpoints", "list, create and rotate receiver URLs", cmdEndpoints},
 		{"destinations", "list and create forwarding targets", cmdDestinations},
 		{"adapters", "list built-in adapters and test declarative ones", cmdAdapters},
+		{"infer", "draft a declarative adapter from captured payloads", cmdInfer},
 		{"events", "search events and replay them", cmdEvents},
 		{"keys", "issue and revoke API keys", cmdKeys},
 		{"simulate", "post a correctly-signed sample webhook at a receiver URL", cmdSimulate},
