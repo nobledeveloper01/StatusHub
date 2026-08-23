@@ -1,0 +1,93 @@
+{{- if .Values.migrations.enabled }}
+{{/*
+Migrations run before the new binaries roll out.
+
+A pre-upgrade hook rather than an init container: an init container runs once
+per pod, so a three-replica rollout races three migrations against each other.
+The migration runner takes an advisory lock and would survive that, but a
+deploy whose correctness depends on a lock working is one nobody can reason
+about at three in the morning.
+
+The server refuses to start against a schema older than itself, so a failed
+migration blocks the rollout rather than letting a new binary run against a
+schema it does not expect.
+*/}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "statushub.fullname" . }}-migrate-{{ .Release.Revision }}
+  labels:
+    {{- include "statushub.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "-5"
+    # Kept on failure. The whole value of a blocking migration is being able
+    # to read why it blocked.
+    helm.sh/hook-delete-policy: before-hook-creation
+spec:
+  backoffLimit: 2
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        {{- include "statushub.labels" . | nindent 8 }}
+        app.kubernetes.io/component: migrate
+    spec:
+      restartPolicy: Never
+      {{- include "statushub.podSecurity" . | nindent 6 }}
+      {{- with .Values.image.pullSecrets }}
+      imagePullSecrets: {{ toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: migrate
+          image: {{ include "statushub.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["/usr/local/bin/statushubctl"]
+          args: ["migrate", "up"]
+          {{- include "statushub.containerSecurity" . | nindent 10 }}
+          env:
+            - name: STATUSHUB_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.existingSecret }}
+                  key: {{ .Values.secrets.keys.databaseURL }}
+---
+{{/*
+The partition manager, daily.
+
+raw_events is partitioned monthly and nothing else creates the partitions.
+Provisioning runs three months ahead, so this job can be broken for two of
+them without harm — and it recovers rows that landed in the catch-all while
+it was, which is what stops a missed run becoming permanent.
+*/}}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "statushub.fullname" . }}-partitions
+  labels:
+    {{- include "statushub.labels" . | nindent 4 }}
+spec:
+  schedule: "17 3 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 5
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        spec:
+          restartPolicy: OnFailure
+          {{- include "statushub.podSecurity" . | nindent 10 }}
+          containers:
+            - name: partitions
+              image: {{ include "statushub.image" . }}
+              command: ["/usr/local/bin/statushubctl"]
+              args: ["partitions", "run"]
+              {{- include "statushub.containerSecurity" . | nindent 14 }}
+              env:
+                - name: STATUSHUB_DATABASE_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.secrets.existingSecret }}
+                      key: {{ .Values.secrets.keys.databaseURL }}
+{{- end }}

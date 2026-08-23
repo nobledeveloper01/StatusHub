@@ -1,0 +1,80 @@
+{{/*
+The dispatcher.
+
+Throughput-oriented and network-bound, so it scales on pending queue depth
+rather than CPU — it can be saturated while looking idle. Its SLO is
+deliberately lower than the receiver's: delaying a forward is recoverable,
+losing a provider event is not (§11.3).
+*/}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "statushub.fullname" . }}-dispatcher
+  labels:
+    {{- include "statushub.labels" . | nindent 4 }}
+    app.kubernetes.io/component: dispatcher
+spec:
+  {{- if not .Values.dispatcher.autoscaling.enabled }}
+  replicas: {{ .Values.dispatcher.replicas }}
+  {{- end }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "statushub.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: dispatcher
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      # Unlike the receiver, the dispatcher may dip during a rollout. Nothing
+      # is lost: deliveries are leased, and a replica that goes away has its
+      # lease reclaimed and its work picked up.
+      maxUnavailable: 1
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        {{- include "statushub.labels" . | nindent 8 }}
+        app.kubernetes.io/component: dispatcher
+    spec:
+      {{- include "statushub.podSecurity" . | nindent 6 }}
+      # Must exceed the longest single delivery attempt, or a rolling deploy
+      # severs a request the customer's endpoint is still answering — and
+      # they get the event twice.
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+      {{- with .Values.image.pullSecrets }}
+      imagePullSecrets: {{ toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: dispatcher
+          image: {{ include "statushub.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["serve", "--mode", "dispatcher"]
+          {{- include "statushub.containerSecurity" . | nindent 10 }}
+          env:
+            {{- include "statushub.env" . | nindent 12 }}
+            - name: STATUSHUB_AUDIT_CHECKPOINT_SEED
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.existingSecret }}
+                  key: {{ .Values.secrets.keys.auditCheckpointSeed }}
+                  optional: true
+          # No HTTP probes: the dispatcher serves nothing. Kubernetes
+          # restarting it on a failed probe would be restarting the wrong
+          # thing anyway — a dispatcher that cannot reach the database should
+          # wait, not die, because its work is durable and waiting costs
+          # latency rather than events.
+          resources: {{ toYaml .Values.dispatcher.resources | nindent 12 }}
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: tmp
+          emptyDir: {}
+      {{- with .Values.nodeSelector }}
+      nodeSelector: {{ toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations: {{ toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity: {{ toYaml . | nindent 8 }}
+      {{- end }}

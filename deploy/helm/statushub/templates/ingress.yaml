@@ -1,0 +1,70 @@
+{{- if .Values.ingress.enabled }}
+{{/*
+Two ingresses, not one.
+
+The receiver is public by necessity — providers must reach it — and the
+management API is not. Putting them behind one hostname means any IP
+restriction or WAF rule that protects the API also applies to the receiver,
+and a provider adding an egress range you did not know about then fails
+signature-valid events at the edge, where you cannot see them.
+*/}}
+{{- if .Values.ingress.receiverHost }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "statushub.fullname" . }}-receiver
+  labels:
+    {{- include "statushub.labels" . | nindent 4 }}
+  annotations:
+    # The 1 MB payload ceiling is enforced in the application too. Setting it
+    # here as well means an oversized body is refused before it crosses the
+    # cluster boundary.
+    nginx.ingress.kubernetes.io/proxy-body-size: 1m
+    {{- toYaml .Values.ingress.annotations | nindent 4 }}
+spec:
+  {{- with .Values.ingress.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  {{- with .Values.ingress.tls }}
+  tls: {{ toYaml . | nindent 4 }}
+  {{- end }}
+  rules:
+    - host: {{ .Values.ingress.receiverHost | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "statushub.fullname" . }}-receiver
+                port: { name: http }
+{{- end }}
+{{- if .Values.ingress.apiHost }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "statushub.fullname" . }}-api
+  labels:
+    {{- include "statushub.labels" . | nindent 4 }}
+  annotations:
+    {{- toYaml .Values.ingress.annotations | nindent 4 }}
+spec:
+  {{- with .Values.ingress.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  {{- with .Values.ingress.tls }}
+  tls: {{ toYaml . | nindent 4 }}
+  {{- end }}
+  rules:
+    - host: {{ .Values.ingress.apiHost | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "statushub.fullname" . }}-api
+                port: { name: http }
+{{- end }}
+{{- end }}

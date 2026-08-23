@@ -1,0 +1,12 @@
+apiVersion: v2
+name: statushub
+description: Universal webhook normaliser for fintechs — one receiver in front of every payment provider.
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+home: https://github.com/nobledeveloper01/StatusHub
+sources:
+  - https://github.com/nobledeveloper01/StatusHub
+keywords: [webhooks, fintech, paystack, flutterwave, stripe]
+maintainers:
+  - name: NobleConcepts

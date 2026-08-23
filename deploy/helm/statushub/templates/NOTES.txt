@@ -1,0 +1,38 @@
+StatusHub {{ .Chart.AppVersion }} is installed as {{ .Release.Name }}.
+
+Before a first event can flow:
+
+  1. Create a tenant and its owner key:
+
+     kubectl exec deploy/{{ include "statushub.fullname" . }}-api -- \
+       statushubctl init --slug acme --name "Acme Payments" --env {{ .Values.config.environment }}
+
+     The key is shown once and stored as an Argon2id hash. It cannot be recovered.
+
+  2. Create a receiver URL and paste it into the provider's dashboard:
+
+     curl -X POST {{ .Values.config.baseURL }}/v1/endpoints \
+       -H "Authorization: Bearer <key>" \
+       -d '{"provider":"paystack","environment":"{{ .Values.config.environment }}","secret_ref":"env://PAYSTACK_LIVE"}'
+
+  3. Confirm the deployment is sound before relying on it:
+
+     kubectl exec deploy/{{ include "statushub.fullname" . }}-api -- statushubctl doctor
+
+     Clock skew is the check worth reading. It breaks HMAC timestamp windows
+     in both directions and produces an error that tells you nothing.
+
+{{ if eq .Values.config.environment "live" }}
+The tenant salt master must be present in the {{ .Values.secrets.existingSecret }} secret.
+Without it StatusHub refuses to start in the live environment: customer
+references would be silently dropped, and the only symptom would be a flag on
+a screen nobody has a reason to open.
+{{- else }}
+This release is in the {{ .Values.config.environment }} environment. Set
+config.environment=live to enable the strict validations — https base URL,
+no private destinations, and a required tenant salt master.
+{{- end }}
+
+The receiver and dispatcher are separate Deployments on purpose. Restarting
+the dispatcher while events are arriving is the demonstration worth doing: the
+receiver keeps answering 200 and delivery catches up.

@@ -1,0 +1,118 @@
+# StatusHub Helm values.
+#
+# The receiver and the dispatcher deploy as separate workloads. That is not a
+# stylistic choice: the receiver must stay available when the dispatcher is
+# entirely down, and a single Deployment with one readiness probe would take
+# the receiver out of rotation for a dispatcher fault — losing precisely the
+# events persist-then-acknowledge exists to protect (§11.1).
+
+image:
+  repository: ghcr.io/nobledeveloper01/statushub
+  tag: ""            # defaults to .Chart.AppVersion
+  pullPolicy: IfNotPresent
+  pullSecrets: []
+
+# Everything the two workloads share. Secrets are references, never values —
+# the database only ever holds a reference, and so does this file.
+config:
+  environment: live
+  baseURL: ""        # required: the public origin providers POST to
+  logFormat: json
+  logLevel: info
+
+  # Changing this re-maps transaction references onto different shards, and
+  # two events about one transaction on two shards is exactly the ordering
+  # failure sharding exists to prevent. Treat it as a migration.
+  shards: 64
+
+  # Only enable behind a proxy you control. Otherwise X-Forwarded-For is
+  # caller-supplied, and a source address an attacker chooses is worse than
+  # none — it is a false trail in the forgery investigation.
+  trustProxyHeaders: true
+
+  # Ranges destinations may never resolve to, beyond the universal private
+  # ones. Your VPC CIDR belongs here: it is publicly routable in the IANA
+  # sense and still inside the perimeter.
+  blockedCIDRs: []
+
+# Secrets are read from an existing Kubernetes Secret rather than templated
+# into the release. A value in a Helm release is a value in the cluster's
+# release history, readable by anybody with `helm get values`.
+secrets:
+  existingSecret: statushub
+  keys:
+    databaseURL: database-url
+    tenantSaltMaster: tenant-salt-master
+    auditCheckpointSeed: audit-checkpoint-seed
+
+receiver:
+  replicas: 3
+  # Scales on requests per second and p99 latency: it is latency-critical,
+  # low-CPU and high-connection-count.
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 30
+    targetCPUUtilizationPercentage: 60
+  resources:
+    requests: { cpu: 200m, memory: 128Mi }
+    limits:   { memory: 512Mi }
+  # No CPU limit on purpose. A throttled receiver misses its 50 ms budget,
+  # the provider retries, and a capacity problem becomes a duplicate-events
+  # problem. Requests reserve; limits only punish.
+
+dispatcher:
+  replicas: 2
+  # Scales on pending queue depth rather than CPU: it is network-bound, so it
+  # can be saturated while looking idle.
+  autoscaling:
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 20
+  resources:
+    requests: { cpu: 200m, memory: 128Mi }
+    limits:   { memory: 512Mi }
+
+api:
+  replicas: 2
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits:   { memory: 512Mi }
+
+# Migrations run as a pre-install/pre-upgrade hook, and the server refuses to
+# start against an older schema — so a failed migration blocks the rollout
+# rather than letting a new binary run against a schema it does not expect.
+migrations:
+  enabled: true
+
+# Longer than the longest delivery attempt, so a rolling deploy drains rather
+# than severing a request the customer's endpoint is still answering.
+# terminationGracePeriodSeconds must exceed the app's own shutdown grace.
+shutdownGraceSeconds: 30
+terminationGracePeriodSeconds: 45
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  receiverHost: ""   # hooks.example.com
+  apiHost: ""        # api.example.com
+  tls: []
+
+serviceMonitor:
+  enabled: false
+  interval: 30s
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  seccompProfile: { type: RuntimeDefault }
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities: { drop: ["ALL"] }
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

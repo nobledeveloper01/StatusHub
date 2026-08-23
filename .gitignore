@@ -27,3 +27,8 @@ sdk/python/.venv/
 sdk/python/dist/
 __pycache__/
 sdk/node/package-lock.json
+
+# Terraform working state; the module is source, the lock and plugins are not
+deploy/terraform/.terraform/
+deploy/terraform/.terraform.lock.hcl
+deploy/terraform/*.tfstate*

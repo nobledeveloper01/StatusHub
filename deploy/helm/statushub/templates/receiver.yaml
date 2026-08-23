@@ -1,0 +1,162 @@
+{{/*
+The receiver.
+
+Latency-critical: a provider that gets a 500 may never retry, so the SLO is
+99.99% availability and a 50 ms p99 (§11.3). Both targets are deliberately
+higher than the dispatcher's, because losing a provider event is
+unrecoverable and delaying a forward is not.
+*/}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "statushub.fullname" . }}-receiver
+  labels:
+    {{- include "statushub.labels" . | nindent 4 }}
+    app.kubernetes.io/component: receiver
+spec:
+  {{- if not .Values.receiver.autoscaling.enabled }}
+  replicas: {{ .Values.receiver.replicas }}
+  {{- end }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "statushub.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: receiver
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      # Never fewer instances than we started with. A receiver rollout that
+      # dips capacity drops provider connections, and a dropped connection is
+      # a provider retry we did not need to cause.
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        {{- include "statushub.labels" . | nindent 8 }}
+        app.kubernetes.io/component: receiver
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8081"
+    spec:
+      {{- include "statushub.podSecurity" . | nindent 6 }}
+      # Longer than the app's own drain, or Kubernetes kills the process
+      # mid-drain and the graceful shutdown is decorative.
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+      {{- with .Values.image.pullSecrets }}
+      imagePullSecrets: {{ toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: receiver
+          image: {{ include "statushub.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["serve", "--mode", "receiver"]
+          {{- include "statushub.containerSecurity" . | nindent 10 }}
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            {{- include "statushub.env" . | nindent 12 }}
+          # Readiness is exactly "can I write a raw event" and says nothing
+          # about the dispatcher. A shared probe would take the receiver out
+          # of rotation for a dispatcher fault (§11.1).
+          readinessProbe:
+            httpGet: { path: /readyz, port: http }
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          # Liveness is only "is the process alive". Pointing it at /readyz
+          # would restart a healthy receiver every time the database blinked,
+          # turning a brief outage into a restart loop.
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 6
+          startupProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 3
+            failureThreshold: 20
+          resources: {{ toYaml .Values.receiver.resources | nindent 12 }}
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        # The root filesystem is read-only, so anything needing scratch space
+        # gets an explicit emptyDir rather than a writable image.
+        - name: tmp
+          emptyDir: {}
+      {{- with .Values.nodeSelector }}
+      nodeSelector: {{ toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations: {{ toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity: {{ toYaml . | nindent 8 }}
+      {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "statushub.fullname" . }}-receiver
+  labels:
+    {{- include "statushub.labels" . | nindent 4 }}
+    app.kubernetes.io/component: receiver
+spec:
+  type: ClusterIP
+  ports:
+    - { name: http, port: 80, targetPort: http }
+  selector:
+    app.kubernetes.io/name: {{ include "statushub.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: receiver
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "statushub.fullname" . }}-receiver
+  labels:
+    {{- include "statushub.labels" . | nindent 4 }}
+spec:
+  # A node drain must not be able to take the receiver below two instances.
+  # The dispatcher has no budget: it can be entirely absent for minutes
+  # without an event being lost, and blocking a cluster upgrade for it would
+  # be protecting the wrong thing.
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "statushub.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: receiver
+{{- if .Values.receiver.autoscaling.enabled }}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "statushub.fullname" . }}-receiver
+  labels:
+    {{- include "statushub.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "statushub.fullname" . }}-receiver
+  minReplicas: {{ .Values.receiver.autoscaling.minReplicas }}
+  maxReplicas: {{ .Values.receiver.autoscaling.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.receiver.autoscaling.targetCPUUtilizationPercentage }}
+  behavior:
+    scaleUp:
+      # Providers arrive in bursts after their own outages, so scaling up is
+      # allowed to be abrupt.
+      stabilizationWindowSeconds: 0
+    scaleDown:
+      # Scaling down is not. Removing receivers during a lull that turns out
+      # to be the calm before a retry storm is how a burst becomes a 429.
+      stabilizationWindowSeconds: 300
+{{- end }}

@@ -128,6 +128,45 @@ jobs:
           python -m pip install --quiet pytest
           python -m pytest tests/ -q
 
+  manifests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.16.2
+
+      - name: Chart lints
+        run: helm lint deploy/helm/statushub --set config.baseURL=https://hooks.example.com
+
+      # A required value that is not enforced is a value somebody deploys
+      # without, producing receiver URLs nobody can use.
+      - name: Required values are enforced
+        run: |
+          if helm template statushub deploy/helm/statushub >/dev/null 2>&1; then
+            echo "the chart rendered without config.baseURL; it must be required"
+            exit 1
+          fi
+
+      - name: Manifests are valid Kubernetes
+        run: |
+          curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz \
+            | tar -xz kubeconform
+          helm template statushub deploy/helm/statushub \
+            --set config.baseURL=https://hooks.example.com \
+            | ./kubeconform -summary -strict -ignore-missing-schemas
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.8
+
+      - name: Terraform is formatted and valid
+        run: |
+          terraform -chdir=deploy/terraform fmt -check -diff
+          terraform -chdir=deploy/terraform init -backend=false
+          terraform -chdir=deploy/terraform validate
+
   security:
     runs-on: ubuntu-latest
     steps:
@@ -149,7 +188,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   build:
-    needs: [quality, lint, security]
+    needs: [quality, lint, manifests, security]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
