@@ -90,76 +90,25 @@ func New(o Options) *Server {
 }
 
 // Handler returns the routed, middlewared management API.
+//
+// Built from the same route table the OpenAPI document is generated from, so
+// a route cannot exist in one and not the other.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
-
-	// Unauthenticated. Health says the process is alive; readiness says it
-	// can do its job. They are separate because a readiness failure should
-	// remove an instance from rotation and a health failure should restart it
-	// — conflating them turns a slow database into a restart loop.
-	mux.HandleFunc("GET /healthz", s.handleHealthz)
-	mux.HandleFunc("GET /readyz", s.handleReadyz)
-	mux.HandleFunc("GET /metrics", s.handleMetrics)
-
 	authed := http.NewServeMux()
 
-	// Endpoints — the receiver URLs providers are pointed at.
-	authed.HandleFunc("POST /v1/endpoints", requireRole(auth.RoleEngineer, s.idempotent(s.handleCreateEndpoint)))
-	authed.HandleFunc("GET /v1/endpoints", requireRole(auth.RoleReadOnly, s.handleListEndpoints))
-	authed.HandleFunc("GET /v1/endpoints/{id}", requireRole(auth.RoleReadOnly, s.handleGetEndpoint))
-	authed.HandleFunc("DELETE /v1/endpoints/{id}", requireRole(auth.RoleEngineer, s.handleDeleteEndpoint))
-	authed.HandleFunc("POST /v1/endpoints/{id}/rotate-token", requireRole(auth.RoleEngineer, s.idempotent(s.handleRotateToken)))
-	authed.HandleFunc("GET /v1/endpoints/{id}/signature-failures", requireRole(auth.RoleSupport, s.handleSignatureFailures))
+	for _, r := range routes {
+		h := r.handler(s)
 
-	// Destinations — where events are forwarded.
-	authed.HandleFunc("POST /v1/destinations", requireRole(auth.RoleEngineer, s.idempotent(s.handleCreateDestination)))
-	authed.HandleFunc("GET /v1/destinations", requireRole(auth.RoleReadOnly, s.handleListDestinations))
-	authed.HandleFunc("GET /v1/destinations/{id}", requireRole(auth.RoleReadOnly, s.handleGetDestination))
-	authed.HandleFunc("DELETE /v1/destinations/{id}", requireRole(auth.RoleEngineer, s.handleDeleteDestination))
-
-	// Adapters.
-	// Published so a customer can see what shapes exist and when one retires,
-	// rather than discovering a version change from a broken handler.
-	authed.HandleFunc("GET /v1/schema-versions", requireRole(auth.RoleReadOnly, s.handleSchemaVersions))
-
-	authed.HandleFunc("GET /v1/adapters", requireRole(auth.RoleReadOnly, s.handleListAdapters))
-	authed.HandleFunc("POST /v1/adapters", requireRole(auth.RoleEngineer, s.idempotent(s.handleUploadAdapter)))
-	authed.HandleFunc("POST /v1/adapters/{name}/test", requireRole(auth.RoleEngineer, s.handleTestAdapter))
-	// Proposes a draft from sample payloads. Stores nothing.
-	authed.HandleFunc("POST /v1/adapters/infer", requireRole(auth.RoleEngineer, s.handleInferAdapter))
-	authed.HandleFunc("DELETE /v1/adapters/{name}", requireRole(auth.RoleEngineer, s.handleDeleteAdapter))
-
-	// Events — the explorer's whole surface.
-	authed.HandleFunc("GET /v1/events", requireRole(auth.RoleReadOnly, s.handleQueryEvents))
-	authed.HandleFunc("GET /v1/events/{id}", requireRole(auth.RoleReadOnly, s.handleGetEvent))
-	authed.HandleFunc("GET /v1/events/{id}/raw", requireRole(auth.RoleSupport, s.handleGetRawPayload))
-	authed.HandleFunc("POST /v1/events/{id}/replay", requireRole(auth.RoleSupport, s.idempotent(s.handleReplayEvent)))
-	authed.HandleFunc("POST /v1/events/replay", requireRole(auth.RoleSupport, s.idempotent(s.handleBulkReplay)))
-
-	// Deliveries and dead letters.
-	authed.HandleFunc("GET /v1/deliveries", requireRole(auth.RoleReadOnly, s.handleQueryDeliveries))
-	authed.HandleFunc("POST /v1/deliveries/{id}/retry", requireRole(auth.RoleSupport, s.idempotent(s.handleRetryDelivery)))
-
-	// Streams live events to a developer's laptop. Engineer role, not
-	// read-only: sending live production payloads to an arbitrary machine is
-	// a data-egress decision rather than a read.
-	authed.HandleFunc("POST /v1/listen", requireRole(auth.RoleEngineer, s.handleStartListen))
-	authed.HandleFunc("GET /v1/listen", requireRole(auth.RoleReadOnly, s.handleListListen))
-	authed.HandleFunc("GET /v1/listen/{id}/poll", requireRole(auth.RoleEngineer, s.handlePollListen))
-	authed.HandleFunc("POST /v1/listen/{id}/report", requireRole(auth.RoleEngineer, s.handleReportListen))
-	authed.HandleFunc("DELETE /v1/listen/{id}", requireRole(auth.RoleEngineer, s.handleStopListen))
-
-	// The to-do list the product generates for itself.
-	authed.HandleFunc("GET /v1/unknown-statuses", requireRole(auth.RoleReadOnly, s.handleUnknownStatuses))
-
-	// Audit.
-	authed.HandleFunc("GET /v1/audit", requireRole(auth.RoleReadOnly, s.handleListAudit))
-	authed.HandleFunc("GET /v1/audit/verify", requireRole(auth.RoleReadOnly, s.handleVerifyAudit))
-
-	// Keys. Owner only: a key that can issue keys is a key that can escalate.
-	authed.HandleFunc("POST /v1/keys", requireRole(auth.RoleOwner, s.idempotent(s.handleCreateKey)))
-	authed.HandleFunc("GET /v1/keys", requireRole(auth.RoleOwner, s.handleListKeys))
-	authed.HandleFunc("DELETE /v1/keys/{id}", requireRole(auth.RoleOwner, s.handleRevokeKey))
+		if r.Public {
+			mux.HandleFunc(r.Method+" "+r.Path, h)
+			continue
+		}
+		if r.Idempotent {
+			h = s.idempotent(h)
+		}
+		authed.HandleFunc(r.Method+" "+r.Path, requireRole(r.Role, h))
+	}
 
 	mux.Handle("/v1/", s.authenticate(authed))
 

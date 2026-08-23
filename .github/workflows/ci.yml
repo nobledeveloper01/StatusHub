@@ -72,6 +72,14 @@ jobs:
       - name: Adapter corpus and signature vectors
         run: go test -race ./tests/... -run 'Adapter' -v
 
+      # The specification is generated from the routes. Regenerating it here
+      # means a route added without regenerating fails CI rather than shipping
+      # a document that promises endpoints nobody serves.
+      - name: OpenAPI document is current
+        run: |
+          go run ./cmd/statushubctl openapi --version "$(grep -m1 'version:' docs/openapi.yaml | tr -d ' version:"')" --out docs/openapi.yaml
+          git diff --exit-code docs/openapi.yaml
+
   lint:
     runs-on: ubuntu-latest
     steps:

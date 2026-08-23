@@ -92,6 +92,9 @@ test-sdks: ## The Node and Python client libraries, against the Go-signed fixtur
 	cd sdk/node && npm install --silent && npm run build && node --test test/*.test.js
 	cd sdk/python && python3 -m pytest tests/ -q
 
+openapi: ## Regenerate docs/openapi.yaml from the routes
+	go run ./cmd/statushubctl openapi --version $$(grep -m1 "version:" docs/openapi.yaml | tr -d " version:\"") --out docs/openapi.yaml
+
 sdk-fixtures: ## Regenerate the signature vectors the client libraries verify against
 	go test ./tests -run GenerateSDKFixtures
 
