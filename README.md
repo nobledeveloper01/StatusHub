@@ -882,10 +882,18 @@ Built and tested:
       Kubernetes schemas in CI
 - [x] Release pipeline: signed multi-platform binaries, SPDX SBOM, cosign
       keyless signing, trivy gate, npm and PyPI publishing on a tag
+- [x] [Chaos suite](tests/chaos_test.go): a dispatcher killed mid-delivery, a
+      receiver killed between persist and acknowledge, and the dispatcher
+      absent entirely — each asserting nothing is lost and nothing arrives
+      that the customer cannot deduplicate
+- [x] [k6 load profile](loadtest/) with the 50 ms p99 encoded as a threshold,
+      so a run fails when the SLO is missed rather than reporting a number
+      nobody reads
 
-Still open: multi-region deployment, and Kafka/SQS sink delivery — which §3.3
-puts out of scope for v1 deliberately, since it is a different product
-decision rather than an unfinished one.
+Still open: **multi-region deployment**. And **Kafka/SQS sink delivery**,
+which §3.3 puts out of scope for v1 deliberately — that is a product decision
+rather than an unfinished one, and forwarding to a bus instead of an endpoint
+changes what ordering and replay even mean.
 
 ---
 
