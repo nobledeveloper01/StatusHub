@@ -397,6 +397,37 @@ destroy the record of the failure that prompted the retry.
 
 ---
 
+## Developing against it
+
+Two commands remove the worst parts of a webhook integration.
+
+**Live events on your laptop, no public URL:**
+
+```bash
+statushubctl listen --forward http://localhost:3000/hooks --key sh_test_...
+```
+
+Real events stream to your machine with the same payload and the same
+signature production receives, so your verification code is exercised rather
+than skipped. Your real destinations keep receiving everything — this is a
+copy, never a diversion.
+
+**Prove an integration before a real transaction exists:**
+
+```bash
+statushubctl simulate --provider paystack --event charge.success   --url <receiver URL> --secret <the endpoint's secret>
+```
+
+The samples are the same captured payloads the adapter test suite runs
+against, so a payload the simulator sends is one the adapter is proven to
+read. Pass `--all` to include the failure and unmapped-status cases, which are
+the ones worth putting through your handler before you rely on it.
+
+**Adopt without a cutover.** Shadow mode forwards each event to your existing
+per-provider handler *and* your new canonical one, then reports where they
+disagree — and distinguishes the case that is a regression from the case where
+your current handler is dropping events today.
+
 ## Verifying our signature
 
 The most common way a webhook integration goes wrong is someone writing their
@@ -747,6 +778,15 @@ the exported API — the same surface a caller gets.
 - **[ADR-003](docs/adr/0003-ordering-with-a-bounded-blocking-window.md) —
   Per-transaction ordering with a bounded blocking window.** Where ordering
   and throughput are traded off, and why the bound is the retry budget.
+- **[ADR-004](docs/adr/0004-derive-tenant-salts-from-one-master.md) — Derive
+  per-tenant salts rather than provisioning them.** A control whose absence is
+  invisible is not a control: a forgotten salt dropped every customer
+  reference silently, and the fix was to remove the step that could be
+  forgotten.
+- **[ADR-005](docs/adr/0005-park-during-outages-rather-than-dead-letter.md) —
+  A destination-wide outage parks deliveries.** Why a retry budget designed
+  for one failing event is the wrong instrument for a destination that is
+  down, and why the parking window is bounded anyway.
 
 ---
 
@@ -761,20 +801,58 @@ Built and tested:
 - [x] Declarative adapters with a dry-run test runner
 - [x] Management API, API keys with roles, hash-chained audit trail
 - [x] Postgres store with row-level security and partitioned raw events
-- [x] `statushubctl`, including `doctor`
+- [x] `statushubctl` — 14 commands, including `doctor`, `listen`, `simulate`,
+      `infer`, `partitions`, `usage` and `secrets`
+- [x] Embedded dashboard: event explorer, unknown statuses, dead letters,
+      endpoints, destinations, adapters, live listeners, audit
+- [x] Go, Node and Python client libraries, verified against vectors the
+      server itself generates
 
-Next, in order:
+**Adoption** — the things that get a first event flowing:
 
-| Phase | |
-|---|---|
-| **6 — Adoption** | `statushubctl listen` (forward live webhooks to localhost); a signed-payload simulator for every provider; shadow mode, which forwards to your old handler *and* the new one and reports where they disagree; adapter inference from sample payloads |
-| **7 — Reliability** | Per-destination circuit breaker; explicit backpressure with `429` + `Retry-After`; provider silence detection; partition manager and retention enforcement |
-| **8 — Trust** | Idempotency keys on every management write; nightly audit checkpoint signing; data subject export and erasure; auditable usage metering |
-| **9 — Operability** | Alert routing to Slack, email and webhook; canonical schema versioning per destination |
+- [x] `statushubctl listen` — live events streamed to a handler on your laptop,
+      with the same payload and signature production receives. No public URL
+      needed.
+- [x] `statushubctl simulate` — correctly-signed sample payloads for all six
+      providers, from the same corpus the adapter tests run against.
+- [x] **Shadow mode** — forwards to your existing handler *and* the new one,
+      and reports where they disagree. The objection that actually blocks
+      these deals is *"I cannot risk switching my webhook handler"*, and an
+      observation period answers it in a way a feature list cannot. It also
+      finds bugs in the old handler, which is a conversation worth having
+      before anybody blames the new one.
+- [x] `statushubctl infer` — drafts a declarative adapter from captured
+      payloads, with each guess's reasoning and confidence attached.
 
-Shadow mode is the one that matters most for adoption. The objection that
-actually blocks these deals is *"I cannot risk switching my webhook handler"* —
-and running both in parallel, with a divergence report, answers it directly.
+**Reliability:**
+
+- [x] Per-destination circuit breaker that parks deliveries instead of
+      spending their retry budget ([ADR-005](docs/adr/0005-park-during-outages-rather-than-dead-letter.md))
+- [x] Explicit backpressure: per-tenant token bucket, concurrency ceiling,
+      `429` with `Retry-After`
+- [x] Provider silence detection against each endpoint's own hour-of-week
+      baseline
+- [x] Partition manager: provisions three months ahead, drops only fully
+      expired partitions, recovers rows stranded in the catch-all
+
+**Trust:**
+
+- [x] Idempotency keys on every management write
+- [x] Signed audit checkpoints and a nightly chain walk, verifiable by your
+      auditor with a public key and without involving us
+- [x] Data subject export and erasure, with a verification step
+- [x] Usage metering counted from the rows the event explorer shows
+
+**Operability:**
+
+- [x] Alert routing to Slack, email and webhook — pages immediately, warnings
+      batched, each carrying its first action
+- [x] `statushubctl doctor`
+- [x] Canonical schema versioning per destination
+
+Still open: multi-region deployment, Helm and Terraform, an OpenAPI document
+generated from the routes rather than maintained beside them, and Kafka/SQS
+sink delivery for tenants who want events on a bus rather than an endpoint.
 
 ---
 
